@@ -241,41 +241,10 @@ Respond with just a number between 1 and 5."""
                 "Failed to parse thinking rounds from API response: %s", e
             )
             return 3
-    
-    def _generate_alternatives(
-        self, base_response: str, prompt: str, num_alternatives: int = 3
-    ) -> List[str]:
-        """Generate alternative responses with a single API request."""
-
-        alt_prompt = (
-            f"Original message: {prompt}\n\n"
-            f"Current response: {base_response}\n\n"
-            f"Generate {num_alternatives} alternative responses that might be"
-            " better. Respond in JSON as {\"alternatives\": [\"alt1\","
-            " \"alt2\", ...]}"
-        )
-
-        messages = self.conversation_history + [
-            {"role": "user", "content": alt_prompt}
-        ]
-        raw_result = self._call_api(messages, temperature=0.7, stream=True)
-
-        try:
-            data = json.loads(raw_result)
-            alternatives = data.get("alternatives", [])
-            if isinstance(alternatives, list):
-                return [
-                    str(a).strip() for a in alternatives
-                ][:num_alternatives]
-        except json.JSONDecodeError:
-            pass
-
-        return [
-            line.strip() for line in raw_result.split("\n") if line.strip()
-        ][:num_alternatives]
 
     @staticmethod
     def _simple_overlap(text1: str, text2: str) -> float:
+
         """Return a simple lexical overlap score."""
         words1 = set(text1.lower().split())
         words2 = set(text2.lower().split())
@@ -312,62 +281,57 @@ Respond with just a number between 1 and 5."""
         """Return a semantic similarity score for ranking."""
         return self._semantic_similarity(prompt, response)
 
-    def _evaluate_responses(
-        self, prompt: str, current_best: str, alternatives: List[str]
-    ) -> tuple[str, str]:
-        """Evaluate responses and select the best one."""
-        print("\n=== EVALUATING RESPONSES ===")
-        numbered = chr(10).join(
-            [f"{i + 1}. {alt}" for i, alt in enumerate(alternatives)]
+    def _batch_generate_and_evaluate(
+        self,
+        current_best: str,
+        prompt: str,
+        num_alternatives: int = 3,
+    ) -> tuple[str, List[str], str]:
+        """Generate alternatives and evaluate all options in one API call."""
+
+        batch_prompt = (
+            f"Original message: {prompt}\n\n"
+            f"Current response: {current_best}\n\n"
+            f"Generate {num_alternatives} alternative responses and then rate"
+            " all options (including the current one) for accuracy, completeness,"
+            " clarity, and relevance on a scale of 1-10. Respond in JSON like:"
+            " {\"alternatives\": [\"alt1\", ...], \"current\": {\"accuracy\": 8,"
+            " \"completeness\": 8, \"clarity\": 8, \"relevance\": 8}, \"1\": {..},"
+            " \"choice\": \"1\", \"reason\": \"text\"}"
         )
-        eval_prompt = f"""Original message: {prompt}
 
-Current best: {current_best}
+        messages = self.conversation_history + [
+            {"role": "user", "content": batch_prompt}
+        ]
 
-Alternatives:
-{numbered}
-
-Rate each response for accuracy, completeness, clarity, and relevance on a
-scale of 1-10. Respond in JSON like:
-{{"current": {{"accuracy": 8, "completeness": 8, "clarity": 8,
-"relevance": 8}}, "1": {{...}}, "choice": "1", "reason": "text"}}"""
-
-        messages = [{"role": "user", "content": eval_prompt}]
-        evaluation = self._call_api(messages, temperature=0.2, stream=True)
-        print("=" * 50)
+        raw = self._call_api(messages, temperature=0.7, stream=True)
 
         data: Dict | None = None
-        choice = "current"
-        explanation = "No explanation provided"
-
         try:
-            data = json.loads(evaluation)
+            data = json.loads(raw)
         except json.JSONDecodeError:
-            match = re.search(r"\{.*\}", evaluation, re.S)
+            match = re.search(r"\{.*\}", raw, re.S)
             if match:
                 try:
                     data = json.loads(match.group(0))
                 except json.JSONDecodeError:
                     data = None
 
+        alternatives: List[str] = []
+        choice = "current"
+        explanation = "No explanation provided"
+
         if isinstance(data, dict):
+            alts = data.get("alternatives", [])
+            if isinstance(alts, list):
+                alternatives = [str(a).strip() for a in alts][:num_alternatives]
             choice = str(data.get("choice", choice)).lower()
             explanation = data.get("reason", explanation)
             score_map = {k: v for k, v in data.items() if isinstance(v, dict)}
         else:
-            lines = [line.strip() for line in evaluation.split("\n") if line.strip()]
+            lines = [line.strip() for line in raw.split("\n") if line.strip()]
+            alternatives = lines[:num_alternatives]
             score_map = {}
-            if lines:
-                first = lines[0].lower()
-                if "current" in first:
-                    choice = "current"
-                else:
-                    for char in first:
-                        if char.isdigit():
-                            choice = char
-                            break
-                if len(lines) > 1:
-                    explanation = " ".join(lines[1:])
 
         responses = [current_best] + alternatives
         labels = ["current"] + [str(i + 1) for i in range(len(alternatives))]
@@ -392,10 +356,9 @@ scale of 1-10. Respond in JSON like:
             scores[model_index] += 1.0
 
         best_idx = max(range(len(scores)), key=lambda i: scores[i])
+        best_response = responses[best_idx]
 
-        if best_idx == 0:
-            return current_best, explanation
-        return alternatives[best_idx - 1], explanation
+        return best_response, alternatives, explanation
 
     def _should_continue_thinking(
         self,
@@ -457,28 +420,21 @@ scale of 1-10. Respond in JSON like:
             if verbose:
                 print(f"\n=== ROUND {round_num}/{thinking_rounds} ===")
             
-            # Generate alternatives
-            alternatives = self._generate_alternatives(
+            # Generate alternatives and evaluate in one call
+            new_best, alternatives, explanation = self._batch_generate_and_evaluate(
                 current_best,
                 user_input,
                 alternatives_per_round,
             )
-            
+
             # Store alternatives in history
             for i, alt in enumerate(alternatives):
                 thinking_history.append({
                     "round": round_num,
                     "response": alt,
                     "selected": False,
-                    "alternative_number": i + 1
+                    "alternative_number": i + 1,
                 })
-            
-            # Evaluate and select best
-            new_best, explanation = self._evaluate_responses(
-                user_input,
-                current_best,
-                alternatives,
-            )
 
             previous_best = current_best
             

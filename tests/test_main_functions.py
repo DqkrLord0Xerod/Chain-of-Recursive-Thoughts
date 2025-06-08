@@ -18,26 +18,14 @@ def test_determine_rounds_bounds(monkeypatch):
     assert chat._determine_thinking_rounds("prompt") == 5
 
 
-def test_generate_alternatives_fallback(monkeypatch):
-    chat = EnhancedRecursiveThinkingChat(api_key="test")
-    monkeypatch.setattr(chat, "_call_api", lambda *a, **k: "a1\na2\n")
-    alts = chat._generate_alternatives("base", "prompt", num_alternatives=2)
-    assert alts == ["a1", "a2"]
-
-
 def test_think_and_respond_flow(monkeypatch):
     chat = EnhancedRecursiveThinkingChat(api_key="test")
     monkeypatch.setattr(chat, "_determine_thinking_rounds", lambda *a, **k: 1)
     monkeypatch.setattr(chat, "_call_api", lambda *a, **k: "initial")
     monkeypatch.setattr(
         chat,
-        "_generate_alternatives",
-        lambda *a, **k: ["alt1"],
-    )
-    monkeypatch.setattr(
-        chat,
-        "_evaluate_responses",
-        lambda *a, **k: ("alt1", "pick alt"),
+        "_batch_generate_and_evaluate",
+        lambda *a, **k: ("alt1", ["alt1"], "pick alt"),
     )
     monkeypatch.setattr(chat, "_trim_conversation_history", lambda: None)
 
@@ -74,12 +62,11 @@ def test_think_and_respond_early_stop(monkeypatch):
 
     gen_calls = []
 
-    def fake_gen(*a, **k):
+    def fake_batch(*a, **k):
         gen_calls.append(1)
-        return ["alt1"]
+        return "initial", ["alt1"], "same"
 
-    monkeypatch.setattr(chat, "_generate_alternatives", fake_gen)
-    monkeypatch.setattr(chat, "_evaluate_responses", lambda *a, **k: ("initial", "same"))
+    monkeypatch.setattr(chat, "_batch_generate_and_evaluate", fake_batch)
     monkeypatch.setattr(chat, "_should_continue_thinking", lambda *a, **k: False)
     monkeypatch.setattr(chat, "_trim_conversation_history", lambda: None)
 
