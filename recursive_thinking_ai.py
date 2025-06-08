@@ -12,6 +12,7 @@ import tiktoken
 from tiktoken import _educational
 import contextlib
 import io
+import time
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -25,6 +26,7 @@ class EnhancedRecursiveThinkingChat:
         max_context_tokens: int = 2000,
         caching_enabled: bool = True,
         cache_size: int = 128,
+        max_retries: int = 3,
     ) -> None:
         """Initialize with OpenRouter API.
 
@@ -34,6 +36,7 @@ class EnhancedRecursiveThinkingChat:
             max_context_tokens: Maximum tokens to keep in history.
             caching_enabled: Enable the in-memory cache.
             cache_size: Maximum entries to store in the cache.
+            max_retries: API retry attempts on failure.
         """
         self.api_key = api_key or os.getenv("OPENROUTER_API_KEY")
         self.model = model
@@ -50,6 +53,7 @@ class EnhancedRecursiveThinkingChat:
         self.caching_enabled = caching_enabled
         self.cache_size = cache_size
         self.cache: OrderedDict[tuple[str, str], str] = OrderedDict()
+        self.max_retries = max_retries
         try:
             self.tokenizer = tiktoken.get_encoding("cl100k_base")
         except Exception:
@@ -108,46 +112,62 @@ class EnhancedRecursiveThinkingChat:
             }
         }
 
-        try:
-            response = requests.post(
-                self.base_url,
-                headers=self.headers,
-                json=payload,
-                stream=stream,
-            )
-            response.raise_for_status()
-            
-            if stream:
-                full_response = ""
-                for line in response.iter_lines():
-                    if line:
-                        line = line.decode('utf-8')
-                        if line.startswith("data: "):
-                            line = line[6:]
-                            if line.strip() == "[DONE]":
-                                break
-                            try:
-                                chunk = json.loads(line)
-                                if "choices" in chunk and len(chunk["choices"]) > 0:
-                                    delta = chunk["choices"][0].get("delta", {})
-                                    content = delta.get("content", "")
-                                    if content:
-                                        full_response += content
-                                        print(content, end="", flush=True)
-                            except json.JSONDecodeError:
-                                continue
-                print()  # New line after streaming
-                result = full_response
-            else:
-                result = response.json()['choices'][0]['message']['content'].strip()
-            if self.caching_enabled:
-                self.cache[cache_key] = result
-                if len(self.cache) > self.cache_size:
-                    self.cache.popitem(last=False)
-            return result
-        except Exception as e:
-            print(f"API Error: {e}")
-            return "Error: Could not get response from API"
+        for attempt in range(1, self.max_retries + 1):
+            try:
+                response = requests.post(
+                    self.base_url,
+                    headers=self.headers,
+                    json=payload,
+                    stream=stream,
+                )
+                response.raise_for_status()
+
+                if stream:
+                    full_response = ""
+                    for line in response.iter_lines():
+                        if line:
+                            line = line.decode("utf-8")
+                            if line.startswith("data: "):
+                                line = line[6:]
+                                if line.strip() == "[DONE]":
+                                    break
+                                try:
+                                    chunk = json.loads(line)
+                                    if (
+                                        "choices" in chunk
+                                        and len(chunk["choices"]) > 0
+                                    ):
+                                        delta = chunk["choices"][0].get(
+                                            "delta", {}
+                                        )
+                                        content = delta.get("content", "")
+                                        if content:
+                                            full_response += content
+                                            print(content, end="", flush=True)
+                                except json.JSONDecodeError:
+                                    continue
+                    print()
+                    result = full_response
+                else:
+                    result = (
+                        response.json()["choices"][0]["message"]["content"]
+                        .strip()
+                    )
+                if self.caching_enabled:
+                    self.cache[cache_key] = result
+                    if len(self.cache) > self.cache_size:
+                        self.cache.popitem(last=False)
+                return result
+            except Exception as e:  # pragma: no cover - logging not tested
+                logger.warning(
+                    "API call failed (attempt %s/%s): %s",
+                    attempt,
+                    self.max_retries,
+                    e,
+                )
+                if attempt == self.max_retries:
+                    return "Error: Could not get response from API"
+                time.sleep(2 ** (attempt - 1))
     
     def _determine_thinking_rounds(self, prompt: str) -> int:
         """Let the model decide how many rounds of thinking are needed."""
