@@ -3,7 +3,11 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from recursive_thinking_ai import EnhancedRecursiveThinkingChat  # noqa: E402
+import recursive_thinking_ai  # noqa: E402
+from recursive_thinking_ai import (  # noqa: E402
+    EnhancedRecursiveThinkingChat,
+    ConvergenceTracker,
+)
 
 
 def test_determine_rounds_valid(monkeypatch):
@@ -41,18 +45,46 @@ def test_think_and_respond_flow(monkeypatch):
     )
 
 
-def test_should_continue_thinking(monkeypatch):
-    chat = EnhancedRecursiveThinkingChat(api_key="test")
+def test_convergence_tracker():
+    tracker = ConvergenceTracker(
+        lambda a, b: 0.96,
+        lambda resp, prompt: 0.5 if resp == "prev" else 0.51,
+    )
+    tracker.add("prev", "p")
+    tracker.add("new", "p")
+    cont, reason = tracker.should_continue("p")
+    assert not cont
+    assert reason == "converged"
 
-    monkeypatch.setattr(chat, "_semantic_similarity", lambda a, b: 0.96)
-    monkeypatch.setattr(chat, "_score_response", lambda resp, prompt: 0.5 if resp == "prev" else 0.51)
+    tracker = ConvergenceTracker(
+        lambda a, b: 0.2,
+        lambda resp, prompt: 0.2 if resp == "prev" else 0.5,
+    )
+    tracker.add("prev", "p")
+    tracker.add("new", "p")
+    cont, reason = tracker.should_continue("p")
+    assert cont
+    assert reason == "continue"
 
-    assert not chat._should_continue_thinking("prev", "new", "p")
 
-    monkeypatch.setattr(chat, "_semantic_similarity", lambda a, b: 0.2)
-    monkeypatch.setattr(chat, "_score_response", lambda resp, prompt: 0.2 if resp == "prev" else 0.5)
+def test_convergence_tracker_oscillation():
+    vals = iter([0.0, 0.05, 0.1])
 
-    assert chat._should_continue_thinking("prev", "new", "p")
+    def score_fn(resp, prompt):
+        return next(vals)
+
+    def sim_fn(a, b):
+        if a == b:
+            return 1.0
+        return 0.2
+
+    tracker = ConvergenceTracker(sim_fn, score_fn)
+    tracker.add("a", "p")
+    tracker.add("b", "p")
+    tracker.add("a", "p")
+    cont, reason = tracker.should_continue("p")
+    assert not cont
+    assert reason == "oscillation"
 
 
 def test_think_and_respond_early_stop(monkeypatch):
@@ -67,7 +99,17 @@ def test_think_and_respond_early_stop(monkeypatch):
         return "initial", ["alt1"], "same"
 
     monkeypatch.setattr(chat, "_batch_generate_and_evaluate", fake_batch)
-    monkeypatch.setattr(chat, "_should_continue_thinking", lambda *a, **k: False)
+
+    class DummyTracker:
+        def add(self, r, p):
+            pass
+
+        def should_continue(self, p):
+            return False, "stop"
+
+    monkeypatch.setattr(
+        recursive_thinking_ai, "ConvergenceTracker", lambda *a, **k: DummyTracker()
+    )
     monkeypatch.setattr(chat, "_trim_conversation_history", lambda: None)
 
     result = chat.think_and_respond("hi", verbose=False)

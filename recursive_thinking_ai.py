@@ -5,7 +5,7 @@ import hashlib
 import math
 import re
 from collections import OrderedDict
-from typing import List, Dict
+from typing import List, Dict, Callable, Tuple
 import pickle
 from datetime import datetime
 import requests
@@ -17,6 +17,57 @@ import time
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+class ConvergenceTracker:
+    """Track response quality to detect convergence or oscillation."""
+
+    def __init__(
+        self,
+        similarity_fn: Callable[[str, str], float],
+        score_fn: Callable[[str, str], float],
+        similarity_threshold: float = 0.95,
+        quality_threshold: float = 0.01,
+        oscillation_threshold: float = 0.95,
+        history_size: int = 5,
+    ) -> None:
+        self.similarity_fn = similarity_fn
+        self.score_fn = score_fn
+        self.similarity_threshold = similarity_threshold
+        self.quality_threshold = quality_threshold
+        self.oscillation_threshold = oscillation_threshold
+        self.history_size = history_size
+        self.history: List[Tuple[str, float]] = []
+
+    def add(self, response: str, prompt: str) -> None:
+        score = self.score_fn(response, prompt)
+        self.history.append((response, score))
+        if len(self.history) > self.history_size:
+            self.history.pop(0)
+
+    def should_continue(self, prompt: str) -> Tuple[bool, str]:
+        if len(self.history) < 2:
+            return True, "insufficient history"
+
+        prev_resp, prev_score = self.history[-2]
+        curr_resp, curr_score = self.history[-1]
+
+        similarity = self.similarity_fn(prev_resp, curr_resp)
+        if similarity >= self.similarity_threshold:
+            return False, "converged"
+
+        improvement = curr_score - prev_score
+        if improvement < self.quality_threshold:
+            return False, "quality plateau"
+
+        for old_resp, _ in self.history[:-2]:
+            if (
+                self.similarity_fn(old_resp, curr_resp)
+                >= self.oscillation_threshold
+            ):
+                return False, "oscillation"
+
+        return True, "continue"
 
 
 class EnhancedRecursiveThinkingChat:
@@ -409,11 +460,20 @@ Respond with just a number between 1 and 5."""
         
         # Initial response
         print("\n=== GENERATING INITIAL RESPONSE ===")
-        messages = self.conversation_history + [{"role": "user", "content": user_input}]
+        messages = self.conversation_history + [
+            {"role": "user", "content": user_input}
+        ]
         current_best = self._call_api(messages, stream=True)
         print("=" * 50)
-        
-        thinking_history = [{"round": 0, "response": current_best, "selected": True}]
+
+        thinking_history = [
+            {"round": 0, "response": current_best, "selected": True}
+        ]
+
+        tracker = ConvergenceTracker(
+            self._semantic_similarity, self._score_response
+        )
+        tracker.add(current_best, user_input)
         
         # Iterative improvement
         for round_num in range(1, thinking_rounds + 1):
@@ -436,8 +496,6 @@ Respond with just a number between 1 and 5."""
                     "alternative_number": i + 1,
                 })
 
-            previous_best = current_best
-            
             # Update selection in history
             if new_best != current_best:
                 for item in thinking_history:
@@ -457,7 +515,9 @@ Respond with just a number between 1 and 5."""
                 if verbose:
                     print(f"\n    ✓ Kept current response: {explanation}")
 
-            if not self._should_continue_thinking(previous_best, current_best, user_input):
+            tracker.add(current_best, user_input)
+            cont, _ = tracker.should_continue(user_input)
+            if not cont:
                 break
         
         # Add to conversation history
