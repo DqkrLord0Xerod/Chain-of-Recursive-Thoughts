@@ -20,7 +20,7 @@ def test_send_message_custom_rounds(monkeypatch):
 
     captured = {}
 
-    def fake_think(
+    async def fake_think(
         msg,
         verbose=True,
         thinking_rounds=None,
@@ -57,7 +57,7 @@ def test_send_message_defaults(monkeypatch):
 
     captured = {}
 
-    def fake_think(
+    async def fake_think(
         msg,
         verbose=True,
         thinking_rounds=None,

@@ -2,6 +2,8 @@ import json
 import requests
 import aiohttp
 
+from typing import Optional
+
 from exceptions import APIError, RateLimitError, TokenLimitError
 
 BASE_URL = "https://openrouter.ai/api/v1/chat/completions"
@@ -57,7 +59,14 @@ def sync_chat_completion(headers, messages, model, temperature=0.7, stream=True)
     return data["choices"][0]["message"]["content"].strip()
 
 
-async def async_chat_completion(headers, messages, model, temperature=0.7):
+async def async_chat_completion(
+    headers,
+    messages,
+    model,
+    temperature=0.7,
+    *,
+    session: Optional[aiohttp.ClientSession] = None,
+) -> str:
     payload = {
         "model": model,
         "messages": messages,
@@ -65,8 +74,9 @@ async def async_chat_completion(headers, messages, model, temperature=0.7):
         "stream": False,
         "reasoning": {"max_tokens": 10386},
     }
-    async with aiohttp.ClientSession() as session:
-        async with session.post(BASE_URL, headers=headers, json=payload) as resp:
+
+    async def _post(sess: aiohttp.ClientSession) -> str:
+        async with sess.post(BASE_URL, headers=headers, json=payload) as resp:
             if resp.status == 429:
                 raise RateLimitError("Rate limit exceeded")
             if resp.status >= 400:
@@ -79,7 +89,12 @@ async def async_chat_completion(headers, messages, model, temperature=0.7):
                     raise TokenLimitError(str(msg))
                 raise APIError(str(msg))
             data = await resp.json()
-    return data["choices"][0]["message"]["content"].strip()
+        return data["choices"][0]["message"]["content"].strip()
+
+    if session is None:
+        async with aiohttp.ClientSession() as sess:
+            return await _post(sess)
+    return await _post(session)
 
 
 def get_embeddings(headers, texts):

@@ -5,13 +5,12 @@ from config.settings import settings
 import uvicorn
 import json
 import os
-import asyncio
 from datetime import datetime
 from typing import Optional
 import logging
 
 # Import the main RecThink class
-from core.chat import EnhancedRecursiveThinkingChat, CoRTConfig
+from core.chat import AsyncEnhancedRecursiveThinkingChat, CoRTConfig
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -59,7 +58,7 @@ async def initialize_chat(config: ChatConfig):
         session_id = f"session_{datetime.now().strftime('%Y%m%d%H%M%S')}_{os.urandom(4).hex()}"
         
         # Initialize the chat instance
-        chat = EnhancedRecursiveThinkingChat(
+        chat = AsyncEnhancedRecursiveThinkingChat(
             CoRTConfig(api_key=config.api_key, model=config.model)
         )
         chat_instances[session_id] = chat
@@ -79,18 +78,27 @@ async def send_message(request: MessageRequest):
         
         chat = chat_instances[request.session_id]
 
-        result = chat.think_and_respond(
+        result = await chat.think_and_respond(
             request.message,
             verbose=True,
             thinking_rounds=request.thinking_rounds,
             alternatives_per_round=request.alternatives_per_round,
         )
         
+        if hasattr(result, "response"):
+            resp_text = result.response
+            rounds = result.thinking_rounds
+            history = result.thinking_history
+        else:
+            resp_text = result["response"]
+            rounds = result["thinking_rounds"]
+            history = result["thinking_history"]
+
         return {
             "session_id": request.session_id,
-            "response": result["response"],
-            "thinking_rounds": result["thinking_rounds"],
-            "thinking_history": result["thinking_history"]
+            "response": resp_text,
+            "thinking_rounds": rounds,
+            "thinking_history": history,
         }
     except Exception as e:
         logger.error(f"Error processing message: {str(e)}")
@@ -156,21 +164,20 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
     
     try:
         # Set up a custom callback to stream thinking process
-        original_call_api = chat._call_api
+        original_call_api = chat._async_call_api
         
         async def stream_callback(chunk):
             await websocket.send_json({"type": "chunk", "content": chunk})
         
         # Override the _call_api method to also send updates via WebSocket
-        def ws_call_api(messages, temperature=0.7, stream=True):
-            result = original_call_api(messages, temperature, stream)
-            # Send the chunk via WebSocket if we're streaming
+        async def ws_call_api(messages, temperature=0.7, stream=True):
+            result = await original_call_api(messages, temperature)
             if stream:
-                asyncio.create_task(stream_callback(result))
+                await stream_callback(result)
             return result
         
         # Replace the method temporarily
-        chat._call_api = ws_call_api
+        chat._async_call_api = ws_call_api
         
         # Wait for messages from the client
         while True:
@@ -179,14 +186,23 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
             
             if message_data["type"] == "message":
                 # Process the message
-                result = chat.think_and_respond(message_data["content"], verbose=True)
+                result = await chat.think_and_respond(message_data["content"], verbose=True)
                 
                 # Send the final result
+                if hasattr(result, "response"):
+                    resp_text = result.response
+                    rounds = result.thinking_rounds
+                    history = result.thinking_history
+                else:
+                    resp_text = result["response"]
+                    rounds = result["thinking_rounds"]
+                    history = result["thinking_history"]
+
                 await websocket.send_json({
                     "type": "final",
-                    "response": result["response"],
-                    "thinking_rounds": result["thinking_rounds"],
-                    "thinking_history": result["thinking_history"]
+                    "response": resp_text,
+                    "thinking_rounds": rounds,
+                    "thinking_history": history,
                 })
     
     except WebSocketDisconnect:
@@ -196,7 +212,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
         await websocket.send_json({"error": str(e)})
     finally:
         # Restore original method
-        chat._call_api = original_call_api
+        chat._async_call_api = original_call_api
 
 
 # Serve the React app
