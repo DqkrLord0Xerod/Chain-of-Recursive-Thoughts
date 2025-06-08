@@ -26,6 +26,7 @@ from config.settings import settings
 from core.context import ContextManager
 from core.recursion import ConvergenceTracker, QualityAssessor
 from exceptions import APIError, RateLimitError, TokenLimitError
+from monitoring import MetricsRecorder
 
 logging.basicConfig(level=logging.INFO)
 structlog.configure(logger_factory=structlog.stdlib.LoggerFactory())
@@ -121,6 +122,17 @@ class EnhancedRecursiveThinkingChat:
         return openrouter.sync_chat_completion(
             self.headers, [{"role": "user", "content": prompt}], self.model, stream=False, temperature=0.3
         )
+
+    def _token_count(self, text: str) -> int:
+        return len(self.tokenizer.encode(text))
+
+    def _calculate_token_usage(self, api_calls: List[Dict]) -> int:
+        total = 0
+        for call in api_calls:
+            for msg in call.get("messages", []):
+                total += self._token_count(msg.get("content", ""))
+            total += self._token_count(call.get("response", ""))
+        return total
 
     def _load_disk_cache(self) -> None:
         if not self.disk_cache_path or not os.path.exists(self.disk_cache_path):
@@ -397,6 +409,7 @@ Respond with just a number between 1 and 5."""
         verbose: bool = True,
         thinking_rounds: int | None = None,
         alternatives_per_round: int = 3,
+        metrics_recorder: MetricsRecorder | None = None,
     ) -> ThinkingResult:
         self.logger.info("=" * 50)
         self.logger.info("🤔 RECURSIVE THINKING PROCESS STARTING")
@@ -416,6 +429,8 @@ Respond with just a number between 1 and 5."""
             lambda resp, p: self.quality_assessor.comprehensive_score(resp, p)["overall"],
         )
         tracker.add(current_best, user_input)
+        convergence_reason = "max_rounds"
+        rounds_completed = 0
         for round_num in range(1, thinking_rounds + 1):
             if verbose:
                 self.logger.info("=== ROUND %s/%s ===", round_num, thinking_rounds)
@@ -449,8 +464,10 @@ Respond with just a number between 1 and 5."""
                 if verbose:
                     self.logger.info("    \u2713 Kept current response: %s", explanation)
             tracker.add(current_best, user_input)
-            cont, _ = tracker.should_continue(user_input)
+            cont, reason = tracker.should_continue(user_input)
+            rounds_completed += 1
             if not cont:
+                convergence_reason = reason
                 break
         self.conversation_history.append({"role": "user", "content": user_input})
         self.conversation_history.append({"role": "assistant", "content": current_best})
@@ -460,6 +477,14 @@ Respond with just a number between 1 and 5."""
         self.logger.info("=" * 50)
         api_calls = self.full_thinking_log[start_index:]
         processing_time = time.time() - start_time
+        token_usage = self._calculate_token_usage(api_calls)
+        if metrics_recorder is not None:
+            metrics_recorder.record_run(
+                processing_time=processing_time,
+                token_usage=token_usage,
+                num_rounds=rounds_completed,
+                convergence_reason=convergence_reason,
+            )
         return ThinkingResult(
             response=current_best,
             thinking_rounds=thinking_rounds,
@@ -617,6 +642,7 @@ Respond with just a number between 1 and 5."""
         verbose: bool = True,
         thinking_rounds: int | None = None,
         alternatives_per_round: int = 3,
+        metrics_recorder: MetricsRecorder | None = None,
     ) -> ThinkingResult:
         self.logger.info("=" * 50)
         self.logger.info("🤔 RECURSIVE THINKING PROCESS STARTING")
@@ -636,6 +662,8 @@ Respond with just a number between 1 and 5."""
             lambda resp, p: self.quality_assessor.comprehensive_score(resp, p)["overall"],
         )
         tracker.add(current_best, user_input)
+        convergence_reason = "max_rounds"
+        rounds_completed = 0
         for round_num in range(1, thinking_rounds + 1):
             if verbose:
                 self.logger.info("=== ROUND %s/%s ===", round_num, thinking_rounds)
@@ -669,8 +697,10 @@ Respond with just a number between 1 and 5."""
                 if verbose:
                     self.logger.info("    \u2713 Kept current response: %s", explanation)
             tracker.add(current_best, user_input)
-            cont, _ = tracker.should_continue(user_input)
+            cont, reason = tracker.should_continue(user_input)
+            rounds_completed += 1
             if not cont:
+                convergence_reason = reason
                 break
         self.conversation_history.append({"role": "user", "content": user_input})
         self.conversation_history.append({"role": "assistant", "content": current_best})
@@ -680,6 +710,14 @@ Respond with just a number between 1 and 5."""
         self.logger.info("=" * 50)
         api_calls = self.full_thinking_log[start_index:]
         processing_time = time.time() - start_time
+        token_usage = self._calculate_token_usage(api_calls)
+        if metrics_recorder is not None:
+            metrics_recorder.record_run(
+                processing_time=processing_time,
+                token_usage=token_usage,
+                num_rounds=rounds_completed,
+                convergence_reason=convergence_reason,
+            )
         return ThinkingResult(
             response=current_best,
             thinking_rounds=thinking_rounds,
