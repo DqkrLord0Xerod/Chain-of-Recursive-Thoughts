@@ -15,10 +15,12 @@ from tiktoken import _educational
 import contextlib
 import io
 import time
+import random
 import structlog
 import asyncio
 import aiohttp
 from config.settings import settings
+from exceptions import APIError, RateLimitError, TokenLimitError
 
 logging.basicConfig(level=logging.INFO)
 structlog.configure(logger_factory=structlog.stdlib.LoggerFactory())
@@ -219,6 +221,9 @@ class EnhancedRecursiveThinkingChat:
         if self.disk_cache_path:
             self._load_disk_cache()
         self.max_retries = config.max_retries
+        self.failure_count = 0
+        self.circuit_open = False
+        self.circuit_reset_time = 0.0
         self.quality_assessor = QualityAssessor(self._semantic_similarity)
         try:
             self.tokenizer = tiktoken.get_encoding("cl100k_base")
@@ -322,6 +327,12 @@ class EnhancedRecursiveThinkingChat:
             }
         }
 
+        if self.circuit_open:
+            if time.time() < self.circuit_reset_time:
+                raise APIError("Circuit breaker open")
+            self.circuit_open = False
+            self.failure_count = 0
+
         for attempt in range(1, self.max_retries + 1):
             try:
                 response = requests.post(
@@ -330,7 +341,18 @@ class EnhancedRecursiveThinkingChat:
                     json=payload,
                     stream=stream,
                 )
-                response.raise_for_status()
+                if response.status_code == 429:
+                    raise RateLimitError("Rate limit exceeded")
+                if response.status_code >= 400:
+                    data = {}
+                    try:
+                        data = response.json()
+                    except Exception:
+                        pass
+                    msg = data.get("error") if isinstance(data, dict) else response.text
+                    if "token" in str(msg).lower():
+                        raise TokenLimitError(str(msg))
+                    raise APIError(str(msg))
 
                 if stream:
                     full_response = ""
@@ -376,16 +398,20 @@ class EnhancedRecursiveThinkingChat:
                 api_entry["response"] = result
                 self.full_thinking_log.append(api_entry)
                 return result
-            except Exception as e:  # pragma: no cover - logging not tested
+            except (APIError, RateLimitError, TokenLimitError, Exception) as e:
                 self.logger.warning(
                     "API call failed (attempt %s/%s): %s",
                     attempt,
                     self.max_retries,
                     e,
                 )
+                self.failure_count += 1
                 if attempt == self.max_retries:
-                    return "Error: Could not get response from API"
-                time.sleep(2 ** (attempt - 1))
+                    self.circuit_open = True
+                    self.circuit_reset_time = time.time() + 2 ** attempt
+                    raise
+                delay = 2 ** (attempt - 1) + random.uniform(0, 1)
+                time.sleep(delay)
     
     def _determine_thinking_rounds(self, prompt: str) -> int:
         """Let the model decide how many rounds of thinking are needed."""
@@ -739,6 +765,12 @@ class AsyncEnhancedRecursiveThinkingChat(EnhancedRecursiveThinkingChat):
             "reasoning": {"max_tokens": 10386},
         }
 
+        if self.circuit_open:
+            if time.time() < self.circuit_reset_time:
+                raise APIError("Circuit breaker open")
+            self.circuit_open = False
+            self.failure_count = 0
+
         for attempt in range(1, self.max_retries + 1):
             try:
                 async with aiohttp.ClientSession() as session:
@@ -747,7 +779,18 @@ class AsyncEnhancedRecursiveThinkingChat(EnhancedRecursiveThinkingChat):
                         headers=self.headers,
                         json=payload,
                     ) as response:
-                        response.raise_for_status()
+                        if response.status == 429:
+                            raise RateLimitError("Rate limit exceeded")
+                        if response.status >= 400:
+                            data = {}
+                            try:
+                                data = await response.json()
+                            except Exception:
+                                pass
+                            msg = data.get("error") if isinstance(data, dict) else await response.text()
+                            if "token" in str(msg).lower():
+                                raise TokenLimitError(str(msg))
+                            raise APIError(str(msg))
                         data = await response.json()
 
                 result = data["choices"][0]["message"]["content"].strip()
@@ -767,16 +810,20 @@ class AsyncEnhancedRecursiveThinkingChat(EnhancedRecursiveThinkingChat):
                 api_entry["response"] = result
                 self.full_thinking_log.append(api_entry)
                 return result
-            except Exception as e:
+            except (APIError, RateLimitError, TokenLimitError, Exception) as e:
                 self.logger.warning(
                     "API call failed (attempt %s/%s): %s",
                     attempt,
                     self.max_retries,
                     e,
                 )
+                self.failure_count += 1
                 if attempt == self.max_retries:
-                    return "Error: Could not get response from API"
-                await asyncio.sleep(2 ** (attempt - 1))
+                    self.circuit_open = True
+                    self.circuit_reset_time = time.time() + 2 ** attempt
+                    raise
+                delay = 2 ** (attempt - 1) + random.uniform(0, 1)
+                await asyncio.sleep(delay)
 
     async def _parallel_alternative_generation(
         self,
