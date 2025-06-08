@@ -120,6 +120,18 @@ Respond with just a number between 1 and 5."""
         return [
             line.strip() for line in raw_result.split("\n") if line.strip()
         ][:num_alternatives]
+
+    def _score_response(self, response: str, prompt: str) -> float:
+        """Return a simple overlap score between the prompt and the response.
+
+        The score is the fraction of prompt words that also appear in the
+        candidate response. It ranges from 0.0 to 1.0.
+        """
+        prompt_words = set(prompt.lower().split())
+        resp_words = set(response.lower().split())
+        if not prompt_words:
+            return 0.0
+        return len(prompt_words & resp_words) / len(prompt_words)
     
     def _evaluate_responses(self, prompt: str, current_best: str, alternatives: List[str]) -> tuple[str, str]:
         """Evaluate responses and select the best one."""
@@ -131,7 +143,7 @@ Evaluate these responses and choose the best one:
 Current best: {current_best}
 
 Alternatives:
-{chr(10).join([f"{i+1}. {alt}" for i, alt in enumerate(alternatives)])}
+{chr(10).join([f"{i + 1}. {alt}" for i, alt in enumerate(alternatives)])}
 
 Which response best addresses the original message? Consider accuracy, clarity, and completeness.
 First, respond with ONLY 'current' or a number (1-{len(alternatives)}).
@@ -160,17 +172,26 @@ Then on a new line, explain your choice in one sentence."""
             if len(lines) > 1:
                 explanation = ' '.join(lines[1:])
         
-        if choice == 'current':
+        # Compute a heuristic score for the current response and all
+        # alternatives based on word overlap with the prompt.
+        scores = [self._score_response(current_best, prompt)] + [
+            self._score_response(a, prompt) for a in alternatives
+        ]
+
+        try:
+            model_index = 0 if choice == "current" else int(choice)
+        except Exception:
+            model_index = 0
+
+        # Boost the score of the response chosen by the model.
+        if 0 <= model_index < len(scores):
+            scores[model_index] += 1.0
+
+        best_idx = max(range(len(scores)), key=lambda i: scores[i])
+
+        if best_idx == 0:
             return current_best, explanation
-        else:
-            try:
-                index = int(choice) - 1
-                if 0 <= index < len(alternatives):
-                    return alternatives[index], explanation
-            except:
-                pass
-        
-        return current_best, explanation
+        return alternatives[best_idx - 1], explanation
     
     def think_and_respond(
         self,

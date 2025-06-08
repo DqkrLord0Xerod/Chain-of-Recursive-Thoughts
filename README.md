@@ -15,7 +15,8 @@ YES. I tested it with Mistral 3.1 24B and it went from "meh" to "holy crap", esp
 3. For each round:
    - Generates 3 alternative responses
    - Evaluates all responses
-   - Picks the best one
+   - Assigns an overlap score to each option
+   - Combines that score with the model's pick to choose the winner
 4. Final response is the survivor of this AI battle royale
 
 
