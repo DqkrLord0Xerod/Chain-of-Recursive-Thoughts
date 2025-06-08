@@ -89,25 +89,37 @@ Respond with just a number between 1 and 5."""
             )
             return 3
     
-    def _generate_alternatives(self, base_response: str, prompt: str, num_alternatives: int = 3) -> List[str]:
-        """Generate alternative responses."""
-        alternatives = []
-        
-        for i in range(num_alternatives):
-            print(f"\n=== GENERATING ALTERNATIVE {i+1} ===")
-            alt_prompt = f"""Original message: {prompt}
-            
-Current response: {base_response}
+    def _generate_alternatives(
+        self, base_response: str, prompt: str, num_alternatives: int = 3
+    ) -> List[str]:
+        """Generate alternative responses with a single API request."""
 
-Generate an alternative response that might be better. Be creative and consider different approaches.
-Alternative response:"""
-            
-            messages = self.conversation_history + [{"role": "user", "content": alt_prompt}]
-            alternative = self._call_api(messages, temperature=0.7 + i * 0.1, stream=True)
-            alternatives.append(alternative)
-            print("=" * 50)
-        
-        return alternatives
+        alt_prompt = (
+            f"Original message: {prompt}\n\n"
+            f"Current response: {base_response}\n\n"
+            f"Generate {num_alternatives} alternative responses that might be"
+            " better. Respond in JSON as {\"alternatives\": [\"alt1\","
+            " \"alt2\", ...]}"
+        )
+
+        messages = self.conversation_history + [
+            {"role": "user", "content": alt_prompt}
+        ]
+        raw_result = self._call_api(messages, temperature=0.7, stream=True)
+
+        try:
+            data = json.loads(raw_result)
+            alternatives = data.get("alternatives", [])
+            if isinstance(alternatives, list):
+                return [
+                    str(a).strip() for a in alternatives
+                ][:num_alternatives]
+        except json.JSONDecodeError:
+            pass
+
+        return [
+            line.strip() for line in raw_result.split("\n") if line.strip()
+        ][:num_alternatives]
     
     def _evaluate_responses(self, prompt: str, current_best: str, alternatives: List[str]) -> tuple[str, str]:
         """Evaluate responses and select the best one."""
