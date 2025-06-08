@@ -160,13 +160,29 @@ Then on a new line, explain your choice in one sentence."""
         
         return current_best, explanation
     
-    def think_and_respond(self, user_input: str, verbose: bool = True) -> Dict:
-        """Process user input with recursive thinking."""
+    def think_and_respond(
+        self,
+        user_input: str,
+        verbose: bool = True,
+        thinking_rounds: int | None = None,
+        alternatives_per_round: int = 3,
+    ) -> Dict:
+        """Process user input with recursive thinking.
+
+        Args:
+            user_input: The message from the user.
+            verbose: Whether to print progress information.
+            thinking_rounds: Number of thinking rounds to run. If ``None``,
+                the model will determine the count automatically.
+            alternatives_per_round: Number of alternative responses generated
+                in each round.
+        """
         print("\n" + "=" * 50)
         print("🤔 RECURSIVE THINKING PROCESS STARTING")
         print("=" * 50)
         
-        thinking_rounds = self._determine_thinking_rounds(user_input)
+        if thinking_rounds is None:
+            thinking_rounds = self._determine_thinking_rounds(user_input)
         
         if verbose:
             print(f"\n🤔 Thinking... ({thinking_rounds} rounds needed)")
@@ -185,7 +201,11 @@ Then on a new line, explain your choice in one sentence."""
                 print(f"\n=== ROUND {round_num}/{thinking_rounds} ===")
             
             # Generate alternatives
-            alternatives = self._generate_alternatives(current_best, user_input)
+            alternatives = self._generate_alternatives(
+                current_best,
+                user_input,
+                alternatives_per_round,
+            )
             
             # Store alternatives in history
             for i, alt in enumerate(alternatives):

@@ -72,28 +72,13 @@ async def send_message(request: MessageRequest):
             raise HTTPException(status_code=404, detail="Session not found")
         
         chat = chat_instances[request.session_id]
-        
-        # Override class parameters if provided
-        original_thinking_fn = chat._determine_thinking_rounds
-        original_alternatives_fn = chat._generate_alternatives
-        
-        if request.thinking_rounds is not None:
-            # Override the thinking rounds determination
-            chat._determine_thinking_rounds = lambda _: request.thinking_rounds
-        
-        if request.alternatives_per_round is not None:
-            # Store the original function
-            def modified_generate_alternatives(base_response, prompt, num_alternatives=3):
-                return original_alternatives_fn(base_response, prompt, request.alternatives_per_round)
-            
-            chat._generate_alternatives = modified_generate_alternatives
-        
-        # Process the message
-        result = chat.think_and_respond(request.message, verbose=True)
-        
-        # Restore original functions
-        chat._determine_thinking_rounds = original_thinking_fn
-        chat._generate_alternatives = original_alternatives_fn
+
+        result = chat.think_and_respond(
+            request.message,
+            verbose=True,
+            thinking_rounds=request.thinking_rounds,
+            alternatives_per_round=request.alternatives_per_round,
+        )
         
         return {
             "session_id": request.session_id,
