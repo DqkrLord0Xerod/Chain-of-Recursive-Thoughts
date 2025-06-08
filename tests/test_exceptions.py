@@ -5,11 +5,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 import requests  # noqa: E402
 import pytest  # noqa: E402
-
-from recursive_thinking_ai import (  # noqa: E402
-    EnhancedRecursiveThinkingChat,
-    CoRTConfig,
-)
+from core.chat import EnhancedRecursiveThinkingChat, CoRTConfig
 from exceptions import APIError, RateLimitError, TokenLimitError  # noqa: E402
 
 

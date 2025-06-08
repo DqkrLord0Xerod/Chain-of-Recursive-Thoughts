@@ -3,11 +3,8 @@ import sys
 import json
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+from core.chat import EnhancedRecursiveThinkingChat, CoRTConfig
 
-from recursive_thinking_ai import (  # noqa: E402
-    EnhancedRecursiveThinkingChat,
-    CoRTConfig,
-)
 
 
 def test_batch_generate_and_evaluate_single_call(monkeypatch):
