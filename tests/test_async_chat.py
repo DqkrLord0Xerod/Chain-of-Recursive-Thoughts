@@ -1,11 +1,13 @@
 import sys
 import os
 import asyncio
-import aiohttp
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+import pytest
 
-from core.chat import AsyncEnhancedRecursiveThinkingChat, CoRTConfig
-from core.recursion import ConvergenceTracker
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))  # noqa: E402
+from api import openrouter  # noqa: E402
+from core.chat import AsyncEnhancedRecursiveThinkingChat, CoRTConfig  # noqa: E402
+from core.recursion import ConvergenceTracker  # noqa: E402
+
 
 class DummyResponse:
     def __init__(self, text):
@@ -39,14 +41,21 @@ class DummySession:
         return DummyResponse(self.text)
 
 
-def test_async_call_api(monkeypatch):
+@pytest.mark.asyncio
+async def test_async_call_api(monkeypatch):
     chat = AsyncEnhancedRecursiveThinkingChat(CoRTConfig(api_key="x"))
-    monkeypatch.setattr(aiohttp, "ClientSession", lambda *a, **k: DummySession("hi"))
-    result = asyncio.run(chat._async_call_api([{"role": "user", "content": "hi"}]))
+
+    async def fake_completion(*a, **k):
+        return "hi"
+
+    monkeypatch.setattr(openrouter, "async_chat_completion", fake_completion)
+    result = await chat._async_call_api([{"role": "user", "content": "hi"}])
+    await chat.close()
     assert result == "hi"
 
 
-def test_parallel_generation(monkeypatch):
+@pytest.mark.asyncio
+async def test_parallel_generation(monkeypatch):
     chat = AsyncEnhancedRecursiveThinkingChat(CoRTConfig(api_key="x"))
 
     async def fake_api(messages, temperature=0.7, stream=False):
@@ -61,6 +70,7 @@ def test_parallel_generation(monkeypatch):
         similarity_threshold=1.1,
         quality_threshold=-1.0,
     )
+
     async def gather():
         res = []
         async for alt in chat._parallel_alternative_generation(
@@ -69,11 +79,13 @@ def test_parallel_generation(monkeypatch):
             res.append(alt)
         return res
 
-    alts = asyncio.run(gather())
+    alts = await gather()
+    await chat.close()
     assert alts == ["alt1", "alt2", "alt3"]
 
 
-def test_stream_generation_early_stop(monkeypatch):
+@pytest.mark.asyncio
+async def test_stream_generation_early_stop(monkeypatch):
     chat = AsyncEnhancedRecursiveThinkingChat(CoRTConfig(api_key="x"))
 
     responses = ["alt1", "alt2", "alt3"]
@@ -102,5 +114,6 @@ def test_stream_generation_early_stop(monkeypatch):
             res.append(alt)
         return res
 
-    alts = asyncio.run(gather_stop())
+    alts = await gather_stop()
+    await chat.close()
     assert alts == ["alt1", "alt2"]

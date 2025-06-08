@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from core.chat import CoRTConfig, EnhancedRecursiveThinkingChat
+from core.chat import CoRTConfig, AsyncEnhancedRecursiveThinkingChat
 from config.settings import settings
 
 
-def main() -> None:
+async def main() -> None:
     print("🤖 Enhanced Recursive Thinking Chat")
     print("=" * 50)
 
@@ -14,7 +14,7 @@ def main() -> None:
         return
 
     config = CoRTConfig(api_key=api_key)
-    chat = EnhancedRecursiveThinkingChat(config)
+    chat = AsyncEnhancedRecursiveThinkingChat(config)
 
     print("\nChat initialized! Type 'exit' to quit, 'save' to save conversation.")
     print("The AI will think recursively before each response.\n")
@@ -32,7 +32,7 @@ def main() -> None:
         if not user_input:
             continue
 
-        result = chat.think_and_respond(user_input)
+        result = await chat.think_and_respond(user_input)
         print(f"\n🤖 AI FINAL RESPONSE: {result.response}\n")
         print("\n--- COMPLETE THINKING PROCESS ---")
         for item in result.thinking_history:
@@ -51,7 +51,10 @@ def main() -> None:
         if save_full == "y":
             chat.save_full_log()
     print("Goodbye! 👋")
+    await chat.close()
 
 
 if __name__ == "__main__":
-    main()
+    import asyncio
+
+    asyncio.run(main())

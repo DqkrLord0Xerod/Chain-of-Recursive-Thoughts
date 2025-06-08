@@ -9,10 +9,13 @@ import logging
 import os
 import pickle
 import random
+import re
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import AsyncIterator, Dict, List, Tuple
+
+import aiohttp
 
 import structlog
 import tiktoken
@@ -244,12 +247,14 @@ class EnhancedRecursiveThinkingChat:
 
         for attempt in range(1, self.max_retries + 1):
             try:
-                result = await openrouter.async_chat_completion(
-                    self.headers,
-                    messages,
-                    self.model,
-                    temperature=temperature,
-                )
+                async with self.semaphore:
+                    result = await openrouter.async_chat_completion(
+                        self.headers,
+                        messages,
+                        self.model,
+                        temperature=temperature,
+                        session=self.session,
+                    )
                 if self.caching_enabled:
                     self.cache[cache_key] = result
                     if len(self.cache) > self.cache_size:
@@ -496,6 +501,14 @@ Respond with just a number between 1 and 5."""
 
 
 class AsyncEnhancedRecursiveThinkingChat(EnhancedRecursiveThinkingChat):
+    def __init__(self, config: CoRTConfig, max_connections: int = 5) -> None:
+        super().__init__(config)
+        self.session = aiohttp.ClientSession()
+        self.semaphore = asyncio.Semaphore(max_connections)
+
+    async def close(self) -> None:
+        await self.session.close()
+
     async def _parallel_alternative_generation(
         self,
         current_best: str,
@@ -518,3 +531,159 @@ class AsyncEnhancedRecursiveThinkingChat(EnhancedRecursiveThinkingChat):
             if not cont:
                 break
 
+    async def _async_determine_thinking_rounds(self, prompt: str) -> int:
+        meta_prompt = f"""Given this message: "{prompt}"
+
+How many rounds of iterative thinking (1-5) would be optimal to generate the best response?
+Consider the complexity and nuance required.
+Respond with just a number between 1 and 5."""
+        messages = [{"role": "user", "content": meta_prompt}]
+        self.logger.info("=== DETERMINING THINKING ROUNDS ===")
+        response = await self._async_call_api(messages, temperature=0.3)
+        self.logger.info("=" * 50)
+        try:
+            rounds = int("".join(filter(str.isdigit, response)))
+            return min(max(rounds, 1), 5)
+        except (ValueError, TypeError) as e:
+            self.logger.error("Failed to parse thinking rounds from API response: %s", e)
+            return 3
+
+    async def _async_batch_generate_and_evaluate(
+        self,
+        current_best: str,
+        prompt: str,
+        num_alternatives: int = 3,
+    ) -> Tuple[str, List[str], str]:
+        batch_prompt = (
+            f"Original message: {prompt}\n\n"
+            f"Current response: {current_best}\n\n"
+            f"Generate {num_alternatives} alternative responses and then rate"
+            " all options (including the current one) for accuracy, completeness,"
+            " clarity, and relevance on a scale of 1-10. Respond in JSON like:"
+            " {\"alternatives\": [\"alt1\", ...], \"current\": {\"accuracy\": 8,"
+            " \"completeness\": 8, \"clarity\": 8, \"relevance\": 8}, \"1\": {..},"
+            " \"choice\": \"1\", \"reason\": \"text\"}"
+        )
+        messages = self.conversation_history + [{"role": "user", "content": batch_prompt}]
+        raw = await self._async_call_api(messages, temperature=0.7)
+        data: Dict | None = None
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError:
+            match = re.search(r"\{.*\}", raw, re.S)
+            if match:
+                try:
+                    data = json.loads(match.group(0))
+                except json.JSONDecodeError:
+                    data = None
+        alternatives: List[str] = []
+        choice = "current"
+        explanation = "No explanation provided"
+        if isinstance(data, dict):
+            alts = data.get("alternatives", [])
+            if isinstance(alts, list):
+                alternatives = [str(a).strip() for a in alts][:num_alternatives]
+            choice = str(data.get("choice", choice)).lower()
+            explanation = data.get("reason", explanation)
+            score_map = {k: v for k, v in data.items() if isinstance(v, dict)}
+        else:
+            lines = [line.strip() for line in raw.split("\n") if line.strip()]
+            alternatives = lines[:num_alternatives]
+            score_map = {}
+        responses = [current_best] + alternatives
+        labels = ["current"] + [str(i + 1) for i in range(len(alternatives))]
+        scores = []
+        for label, resp in zip(labels, responses):
+            base = self.quality_assessor.comprehensive_score(resp, prompt)["overall"]
+            metrics = score_map.get(label, {})
+            model_score = sum(
+                float(metrics.get(m, 0)) for m in ("accuracy", "completeness", "clarity", "relevance")
+            )
+            model_score /= 40.0
+            scores.append(base + model_score)
+        try:
+            model_index = 0 if choice == "current" else int(choice)
+        except Exception:
+            model_index = None
+        if model_index is not None and 0 <= model_index < len(scores):
+            scores[model_index] += 1.0
+        best_idx = max(range(len(scores)), key=lambda i: scores[i])
+        best_response = responses[best_idx]
+        return best_response, alternatives, explanation
+
+    async def think_and_respond(
+        self,
+        user_input: str,
+        verbose: bool = True,
+        thinking_rounds: int | None = None,
+        alternatives_per_round: int = 3,
+    ) -> ThinkingResult:
+        self.logger.info("=" * 50)
+        self.logger.info("🤔 RECURSIVE THINKING PROCESS STARTING")
+        self.logger.info("=" * 50)
+        start_index = len(self.full_thinking_log)
+        start_time = time.time()
+        if thinking_rounds is None:
+            thinking_rounds = await self._async_determine_thinking_rounds(user_input)
+        if verbose:
+            self.logger.info("🤔 Thinking... (%s rounds needed)", thinking_rounds)
+        messages = self.conversation_history + [{"role": "user", "content": user_input}]
+        current_best = await self._async_call_api(messages)
+        self.logger.info("=" * 50)
+        thinking_history = [{"round": 0, "response": current_best, "selected": True}]
+        tracker = ConvergenceTracker(
+            self._semantic_similarity,
+            lambda resp, p: self.quality_assessor.comprehensive_score(resp, p)["overall"],
+        )
+        tracker.add(current_best, user_input)
+        for round_num in range(1, thinking_rounds + 1):
+            if verbose:
+                self.logger.info("=== ROUND %s/%s ===", round_num, thinking_rounds)
+            new_best, alternatives, explanation = await self._async_batch_generate_and_evaluate(
+                current_best,
+                user_input,
+                alternatives_per_round,
+            )
+            for i, alt in enumerate(alternatives):
+                thinking_history.append(
+                    {
+                        "round": round_num,
+                        "response": alt,
+                        "selected": False,
+                        "alternative_number": i + 1,
+                    }
+                )
+            if new_best != current_best:
+                for item in thinking_history:
+                    if item["round"] == round_num and item["response"] == new_best:
+                        item["selected"] = True
+                        item["explanation"] = explanation
+                current_best = new_best
+                if verbose:
+                    self.logger.info("    \u2713 Selected alternative: %s", explanation)
+            else:
+                for item in thinking_history:
+                    if item["selected"] and item["response"] == current_best:
+                        item["explanation"] = explanation
+                        break
+                if verbose:
+                    self.logger.info("    \u2713 Kept current response: %s", explanation)
+            tracker.add(current_best, user_input)
+            cont, _ = tracker.should_continue(user_input)
+            if not cont:
+                break
+        self.conversation_history.append({"role": "user", "content": user_input})
+        self.conversation_history.append({"role": "assistant", "content": current_best})
+        self.conversation_history = self.context_manager.optimize_context(self.conversation_history)
+        self.logger.info("=" * 50)
+        self.logger.info("🎯 FINAL RESPONSE SELECTED")
+        self.logger.info("=" * 50)
+        api_calls = self.full_thinking_log[start_index:]
+        processing_time = time.time() - start_time
+        return ThinkingResult(
+            response=current_best,
+            thinking_rounds=thinking_rounds,
+            thinking_history=thinking_history,
+            api_calls=api_calls,
+            processing_time=processing_time,
+        )
