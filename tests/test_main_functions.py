@@ -90,6 +90,17 @@ def test_convergence_tracker_oscillation():
     assert reason == "oscillation"
 
 
+def test_convergence_tracker_update():
+    tracker = ConvergenceTracker(
+        lambda a, b: 0.96,
+        lambda resp, prompt: 0.5 if resp == "prev" else 0.51,
+    )
+    tracker.add("prev", "p")
+    cont, reason = tracker.update("new", "p")
+    assert not cont
+    assert reason == "converged"
+
+
 def test_think_and_respond_early_stop(monkeypatch):
     chat = EnhancedRecursiveThinkingChat(CoRTConfig(api_key="test"))
     monkeypatch.setattr(chat, "_determine_thinking_rounds", lambda *a, **k: 3)

@@ -6,7 +6,7 @@ import hashlib
 import math
 import re
 from collections import OrderedDict
-from typing import List, Dict, Callable, Tuple
+from typing import List, Dict, Callable, Tuple, AsyncIterator
 import pickle
 from datetime import datetime
 import requests
@@ -83,6 +83,11 @@ class ConvergenceTracker:
         self.history.append((response, score))
         if len(self.history) > self.history_size:
             self.history.pop(0)
+
+    def update(self, response: str, prompt: str) -> Tuple[bool, str]:
+        """Add a new response and immediately evaluate convergence."""
+        self.add(response, prompt)
+        return self.should_continue(prompt)
 
     def should_continue(self, prompt: str) -> Tuple[bool, str]:
         if len(self.history) < 2:
@@ -830,10 +835,20 @@ class AsyncEnhancedRecursiveThinkingChat(EnhancedRecursiveThinkingChat):
         current_best: str,
         prompt: str,
         num_alternatives: int = 3,
-    ) -> List[str]:
-        """Generate alternatives concurrently."""
+        tracker: ConvergenceTracker | None = None,
+    ) -> AsyncIterator[str]:
+        """Yield alternatives one by one, stopping early if converged."""
 
-        tasks = []
+        if tracker is None:
+            tracker = ConvergenceTracker(
+                self._semantic_similarity,
+                lambda r, p: self.quality_assessor.comprehensive_score(r, p)[
+                    "overall"
+                ],
+            )
+
+        tracker.add(current_best, prompt)
+
         for idx in range(num_alternatives):
             alt_prompt = (
                 f"Alternative #{idx + 1} for '{prompt}' based on '{current_best}'."
@@ -841,10 +856,13 @@ class AsyncEnhancedRecursiveThinkingChat(EnhancedRecursiveThinkingChat):
             messages = self.conversation_history + [
                 {"role": "user", "content": alt_prompt}
             ]
-            tasks.append(self._async_call_api(messages, temperature=0.7, stream=False))
-
-        alternatives = await asyncio.gather(*tasks)
-        return list(alternatives)
+            alt = await self._async_call_api(
+                messages, temperature=0.7, stream=False
+            )
+            cont, _ = tracker.update(alt, prompt)
+            yield alt
+            if not cont:
+                break
 
 
 def main():

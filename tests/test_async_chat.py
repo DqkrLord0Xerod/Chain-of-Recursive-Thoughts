@@ -7,6 +7,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from recursive_thinking_ai import (  # noqa: E402
     AsyncEnhancedRecursiveThinkingChat,
     CoRTConfig,
+    ConvergenceTracker,
 )
 
 
@@ -58,7 +59,52 @@ def test_parallel_generation(monkeypatch):
         return f"alt{idx}"
 
     monkeypatch.setattr(chat, "_async_call_api", fake_api)
-    alts = asyncio.run(
-        chat._parallel_alternative_generation("base", "prompt", num_alternatives=3)
+    tracker = ConvergenceTracker(
+        lambda a, b: 0.0,
+        lambda r, p: 0.0,
+        similarity_threshold=1.1,
+        quality_threshold=-1.0,
     )
+    async def gather():
+        res = []
+        async for alt in chat._parallel_alternative_generation(
+            "base", "prompt", num_alternatives=3, tracker=tracker
+        ):
+            res.append(alt)
+        return res
+
+    alts = asyncio.run(gather())
     assert alts == ["alt1", "alt2", "alt3"]
+
+
+def test_stream_generation_early_stop(monkeypatch):
+    chat = AsyncEnhancedRecursiveThinkingChat(CoRTConfig(api_key="x"))
+
+    responses = ["alt1", "alt2", "alt3"]
+
+    async def fake_api(messages, temperature=0.7, stream=False):
+        idx = int(messages[-1]["content"].split("#")[1].split()[0]) - 1
+        await asyncio.sleep(0)
+        return responses[idx]
+
+    monkeypatch.setattr(chat, "_async_call_api", fake_api)
+    monkeypatch.setattr(
+        chat, "_semantic_similarity", lambda a, b: 0.96 if b == "alt2" else 0.1
+    )
+    scores = {"base": 0.5, "alt1": 0.6, "alt2": 0.61}
+    monkeypatch.setattr(
+        chat.quality_assessor,
+        "comprehensive_score",
+        lambda resp, prompt: {"overall": scores.get(resp, 0.0)},
+    )
+
+    async def gather_stop():
+        res = []
+        async for alt in chat._parallel_alternative_generation(
+            "base", "prompt", num_alternatives=3
+        ):
+            res.append(alt)
+        return res
+
+    alts = asyncio.run(gather_stop())
+    assert alts == ["alt1", "alt2"]
