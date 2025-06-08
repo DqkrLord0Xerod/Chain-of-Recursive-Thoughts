@@ -32,7 +32,17 @@ def test_batch_generate_and_evaluate_single_call(monkeypatch):
         })
 
     monkeypatch.setattr(chat, "_call_api", fake_call)
-    monkeypatch.setattr(chat, "_score_response", lambda *a, **k: 0.5)
+    monkeypatch.setattr(
+        chat.quality_assessor,
+        "comprehensive_score",
+        lambda *a, **k: {
+            "relevance": 0.5,
+            "completeness": 0.5,
+            "clarity": 0.5,
+            "accuracy": 0.5,
+            "overall": 0.5,
+        },
+    )
 
     best, alts, reason = chat._batch_generate_and_evaluate(
         "base", "prompt", num_alternatives=2

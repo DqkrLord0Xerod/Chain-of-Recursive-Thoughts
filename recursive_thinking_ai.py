@@ -70,6 +70,46 @@ class ConvergenceTracker:
         return True, "continue"
 
 
+class QualityAssessor:
+    """Compute simple quality metrics for responses."""
+
+    def __init__(self, similarity_fn: Callable[[str, str], float]) -> None:
+        self.similarity_fn = similarity_fn
+
+    def relevance(self, prompt: str, response: str) -> float:
+        return self.similarity_fn(prompt, response)
+
+    def completeness(self, prompt: str, response: str) -> float:
+        words_prompt = set(prompt.lower().split())
+        words_resp = set(response.lower().split())
+        if not words_prompt:
+            return 0.0
+        return len(words_prompt & words_resp) / len(words_prompt)
+
+    def clarity(self, response: str) -> float:
+        if not response:
+            return 0.0
+        sentences = re.split(r"[.!?]+", response)
+        sentences = [s for s in sentences if s.strip()]
+        if not sentences:
+            return 0.0
+        avg_len = len(response.split()) / len(sentences)
+        return max(0.0, 1.0 - (avg_len - 20) / 20)
+
+    def accuracy(self, prompt: str, response: str) -> float:
+        return self.similarity_fn(prompt, response)
+
+    def comprehensive_score(self, response: str, prompt: str) -> Dict[str, float]:
+        metrics = {
+            "relevance": self.relevance(prompt, response),
+            "completeness": self.completeness(prompt, response),
+            "clarity": self.clarity(response),
+            "accuracy": self.accuracy(prompt, response),
+        }
+        metrics["overall"] = sum(metrics.values()) / len(metrics)
+        return metrics
+
+
 class EnhancedRecursiveThinkingChat:
     def __init__(
         self,
@@ -113,6 +153,7 @@ class EnhancedRecursiveThinkingChat:
         if self.disk_cache_path:
             self._load_disk_cache()
         self.max_retries = max_retries
+        self.quality_assessor = QualityAssessor(self._semantic_similarity)
         try:
             self.tokenizer = tiktoken.get_encoding("cl100k_base")
         except Exception:
@@ -329,8 +370,8 @@ Respond with just a number between 1 and 5."""
             return self._simple_overlap(text1, text2)
 
     def _score_response(self, response: str, prompt: str) -> float:
-        """Return a semantic similarity score for ranking."""
-        return self._semantic_similarity(prompt, response)
+        """Return an overall quality score for ranking."""
+        return self.quality_assessor.comprehensive_score(response, prompt)["overall"]
 
     def _batch_generate_and_evaluate(
         self,
@@ -389,7 +430,7 @@ Respond with just a number between 1 and 5."""
 
         scores = []
         for label, resp in zip(labels, responses):
-            base = self._score_response(resp, prompt)
+            base = self.quality_assessor.comprehensive_score(resp, prompt)["overall"]
             metrics = score_map.get(label, {})
             model_score = sum(
                 float(metrics.get(m, 0))
@@ -427,8 +468,12 @@ Respond with just a number between 1 and 5."""
         if similarity >= similarity_threshold:
             return False
 
-        old_score = self._score_response(previous_response, prompt)
-        new_score = self._score_response(new_response, prompt)
+        old_score = self.quality_assessor.comprehensive_score(
+            previous_response, prompt
+        )["overall"]
+        new_score = self.quality_assessor.comprehensive_score(
+            new_response, prompt
+        )["overall"]
         return (new_score - old_score) >= quality_threshold
 
     def think_and_respond(
@@ -471,7 +516,10 @@ Respond with just a number between 1 and 5."""
         ]
 
         tracker = ConvergenceTracker(
-            self._semantic_similarity, self._score_response
+            self._semantic_similarity,
+            lambda resp, prompt: self.quality_assessor.comprehensive_score(
+                resp, prompt
+            )["overall"],
         )
         tracker.add(current_best, user_input)
         
