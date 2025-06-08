@@ -3,12 +3,9 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-import recursive_thinking_ai  # noqa: E402
-from recursive_thinking_ai import (  # noqa: E402
-    EnhancedRecursiveThinkingChat,
-    ConvergenceTracker,
-    CoRTConfig,
-)
+from core.chat import EnhancedRecursiveThinkingChat, CoRTConfig
+from core.recursion import ConvergenceTracker
+import core.recursion as recursion_mod
 
 
 def test_determine_rounds_valid(monkeypatch):
@@ -120,9 +117,8 @@ def test_think_and_respond_early_stop(monkeypatch):
 
         def should_continue(self, p):
             return False, "stop"
-
     monkeypatch.setattr(
-        recursive_thinking_ai, "ConvergenceTracker", lambda *a, **k: DummyTracker()
+        recursion_mod, "ConvergenceTracker", lambda *a, **k: DummyTracker()
     )
     monkeypatch.setattr(chat, "_trim_conversation_history", lambda: None)
 

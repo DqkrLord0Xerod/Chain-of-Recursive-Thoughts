@@ -8,3 +8,4 @@ requests>=2.28.0
 openai
 tiktoken
 structlog
+aiohttp

@@ -11,7 +11,7 @@ from typing import Optional
 import logging
 
 # Import the main RecThink class
-from recursive_thinking_ai import EnhancedRecursiveThinkingChat, CoRTConfig
+from core.chat import EnhancedRecursiveThinkingChat, CoRTConfig
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)

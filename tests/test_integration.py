@@ -4,11 +4,7 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from recursive_thinking_ai import (  # noqa: E402
-    EnhancedRecursiveThinkingChat,
-    CoRTConfig,
-)
-
+from core.chat import EnhancedRecursiveThinkingChat, CoRTConfig
 
 @pytest.fixture
 def cort_config():

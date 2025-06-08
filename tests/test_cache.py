@@ -3,11 +3,8 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))  # noqa: E402
 
+from core.chat import EnhancedRecursiveThinkingChat, CoRTConfig
 import requests  # noqa: E402
-from recursive_thinking_ai import (  # noqa: E402
-    EnhancedRecursiveThinkingChat,
-    CoRTConfig,
-)
 
 
 def make_response(text):

@@ -4,12 +4,8 @@ import asyncio
 import aiohttp
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from recursive_thinking_ai import (  # noqa: E402
-    AsyncEnhancedRecursiveThinkingChat,
-    CoRTConfig,
-    ConvergenceTracker,
-)
-
+from core.chat import AsyncEnhancedRecursiveThinkingChat, CoRTConfig
+from core.recursion import ConvergenceTracker
 
 class DummyResponse:
     def __init__(self, text):

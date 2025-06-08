@@ -4,11 +4,7 @@ import logging
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))  # noqa: E402
 
-from recursive_thinking_ai import (  # noqa: E402
-    EnhancedRecursiveThinkingChat,
-    CoRTConfig,
-)
-
+from core.chat import EnhancedRecursiveThinkingChat, CoRTConfig
 
 def test_determine_rounds_invalid_response(monkeypatch, caplog):
     chat = EnhancedRecursiveThinkingChat(CoRTConfig(api_key="test"))

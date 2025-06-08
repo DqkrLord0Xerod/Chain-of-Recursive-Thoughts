@@ -2,12 +2,8 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-
-from recursive_thinking_ai import (  # noqa: E402
-    ContextManager,
-    EnhancedRecursiveThinkingChat,
-    CoRTConfig,
-)
+from core.context import ContextManager
+from core.chat import EnhancedRecursiveThinkingChat, CoRTConfig
 import requests  # noqa: E402
 
 
