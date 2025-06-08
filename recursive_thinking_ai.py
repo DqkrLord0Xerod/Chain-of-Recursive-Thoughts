@@ -326,8 +326,27 @@ scale of 1-10. Respond in JSON like:
         if best_idx == 0:
             return current_best, explanation
         return alternatives[best_idx - 1], explanation
-    
-    
+
+    def _should_continue_thinking(
+        self,
+        previous_response: str,
+        new_response: str,
+        prompt: str,
+        similarity_threshold: float = 0.95,
+        quality_threshold: float = 0.01,
+    ) -> bool:
+        """Return ``True`` if another round is likely beneficial."""
+        if not previous_response or not new_response:
+            return False
+
+        similarity = self._semantic_similarity(previous_response, new_response)
+        if similarity >= similarity_threshold:
+            return False
+
+        old_score = self._score_response(previous_response, prompt)
+        new_score = self._score_response(new_response, prompt)
+        return (new_score - old_score) >= quality_threshold
+
     def think_and_respond(
         self,
         user_input: str,
@@ -385,7 +404,13 @@ scale of 1-10. Respond in JSON like:
                 })
             
             # Evaluate and select best
-            new_best, explanation = self._evaluate_responses(user_input, current_best, alternatives)
+            new_best, explanation = self._evaluate_responses(
+                user_input,
+                current_best,
+                alternatives,
+            )
+
+            previous_best = current_best
             
             # Update selection in history
             if new_best != current_best:
@@ -405,6 +430,9 @@ scale of 1-10. Respond in JSON like:
                 
                 if verbose:
                     print(f"\n    ✓ Kept current response: {explanation}")
+
+            if not self._should_continue_thinking(previous_best, current_best, user_input):
+                break
         
         # Add to conversation history
         self.conversation_history.append({"role": "user", "content": user_input})
@@ -449,6 +477,7 @@ scale of 1-10. Respond in JSON like:
             }, f, indent=2, ensure_ascii=False)
         
         print(f"Conversation saved to {filename}")
+
 
 def main():
     print("🤖 Enhanced Recursive Thinking Chat")
@@ -506,6 +535,7 @@ def main():
             chat.save_full_log()
     
     print("Goodbye! 👋")
+
 
 if __name__ == "__main__":
     main()
