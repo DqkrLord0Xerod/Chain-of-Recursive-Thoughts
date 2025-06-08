@@ -4,7 +4,10 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))  # noqa: E402
 
 import requests  # noqa: E402
-from recursive_thinking_ai import EnhancedRecursiveThinkingChat  # noqa: E402
+from recursive_thinking_ai import (  # noqa: E402
+    EnhancedRecursiveThinkingChat,
+    CoRTConfig,
+)
 
 
 def make_response(text):
@@ -29,7 +32,7 @@ def make_response(text):
 
 
 def test_cache_hits(monkeypatch):
-    chat = EnhancedRecursiveThinkingChat(api_key="x")
+    chat = EnhancedRecursiveThinkingChat(CoRTConfig(api_key="x"))
     calls = []
 
     def fake_post(*a, **k):
@@ -45,7 +48,9 @@ def test_cache_hits(monkeypatch):
 
 
 def test_cache_disabled(monkeypatch):
-    chat = EnhancedRecursiveThinkingChat(api_key="x", caching_enabled=False)
+    chat = EnhancedRecursiveThinkingChat(
+        CoRTConfig(api_key="x", caching_enabled=False)
+    )
     calls = []
 
     def fake_post(*a, **k):
@@ -63,7 +68,7 @@ def test_cache_disabled(monkeypatch):
 def test_disk_cache_persist(tmp_path, monkeypatch):
     path = tmp_path / "cache.pkl"
     chat = EnhancedRecursiveThinkingChat(
-        api_key="x", disk_cache_path=str(path)
+        CoRTConfig(api_key="x", disk_cache_path=str(path))
     )
 
     monkeypatch.setattr(requests, "post", lambda *a, **k: make_response("hi"))
@@ -78,7 +83,9 @@ def test_disk_cache_persist(tmp_path, monkeypatch):
         return make_response("new")
 
     monkeypatch.setattr(requests, "post", fake_post)
-    chat2 = EnhancedRecursiveThinkingChat(api_key="x", disk_cache_path=str(path))
+    chat2 = EnhancedRecursiveThinkingChat(
+        CoRTConfig(api_key="x", disk_cache_path=str(path))
+    )
 
     assert chat2._call_api(messages, stream=True) == "hi"
     assert not calls
@@ -87,7 +94,7 @@ def test_disk_cache_persist(tmp_path, monkeypatch):
 def test_disk_cache_limit(tmp_path, monkeypatch):
     path = tmp_path / "cache.pkl"
     chat = EnhancedRecursiveThinkingChat(
-        api_key="x", disk_cache_path=str(path), disk_cache_size=1
+        CoRTConfig(api_key="x", disk_cache_path=str(path), disk_cache_size=1)
     )
 
     monkeypatch.setattr(requests, "post", lambda *a, **k: make_response("a"))
@@ -104,7 +111,7 @@ def test_disk_cache_limit(tmp_path, monkeypatch):
 
     monkeypatch.setattr(requests, "post", fake_post)
     chat2 = EnhancedRecursiveThinkingChat(
-        api_key="x", disk_cache_path=str(path), disk_cache_size=1
+        CoRTConfig(api_key="x", disk_cache_path=str(path), disk_cache_size=1)
     )
 
     chat2._call_api([{"role": "user", "content": "a"}], stream=True)

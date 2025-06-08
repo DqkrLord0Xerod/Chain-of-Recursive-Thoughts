@@ -4,11 +4,14 @@ import json
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from recursive_thinking_ai import EnhancedRecursiveThinkingChat  # noqa: E402
+from recursive_thinking_ai import (  # noqa: E402
+    EnhancedRecursiveThinkingChat,
+    CoRTConfig,
+)
 
 
 def test_batch_generate_and_evaluate_single_call(monkeypatch):
-    chat = EnhancedRecursiveThinkingChat(api_key="test")
+    chat = EnhancedRecursiveThinkingChat(CoRTConfig(api_key="test"))
     calls = []
 
     def fake_call(messages, temperature=0.7, stream=True):

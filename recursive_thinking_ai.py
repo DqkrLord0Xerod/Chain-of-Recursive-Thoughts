@@ -30,6 +30,27 @@ class ThinkingResult:
     processing_time: float = 0.0
 
 
+@dataclass
+class CoRTConfig:
+    """Configuration for :class:`EnhancedRecursiveThinkingChat`."""
+
+    api_key: str | None = None
+    model: str = "mistralai/mistral-small-3.1-24b-instruct:free"
+    max_context_tokens: int = 2000
+    caching_enabled: bool = True
+    cache_size: int = 128
+    max_retries: int = 3
+    disk_cache_path: str | None = None
+    disk_cache_size: int = 256
+
+    @classmethod
+    def from_file(cls, path: str) -> "CoRTConfig":
+        """Load configuration from a JSON file."""
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return cls(**data)
+
+
 class ConvergenceTracker:
     """Track response quality to detect convergence or oscillation."""
 
@@ -166,30 +187,15 @@ class ContextManager:
 
 
 class EnhancedRecursiveThinkingChat:
-    def __init__(
-        self,
-        api_key: str | None = None,
-        model: str = "mistralai/mistral-small-3.1-24b-instruct:free",
-        max_context_tokens: int = 2000,
-        caching_enabled: bool = True,
-        cache_size: int = 128,
-        max_retries: int = 3,
-        disk_cache_path: str | None = None,
-        disk_cache_size: int = 256,
-    ) -> None:
+    def __init__(self, config: CoRTConfig) -> None:
         """Initialize with OpenRouter API.
 
         Args:
-            api_key: The API key for OpenRouter.
-            model: The model identifier.
-            max_context_tokens: Maximum tokens to keep in history.
-            caching_enabled: Enable the in-memory cache.
-            cache_size: Maximum entries to store in the cache.
-            max_retries: API retry attempts on failure.
+            config: :class:`CoRTConfig` instance with runtime parameters.
         """
-        self.api_key = api_key or os.getenv("OPENROUTER_API_KEY")
-        self.model = model
-        self.max_context_tokens = max_context_tokens
+        self.api_key = config.api_key or os.getenv("OPENROUTER_API_KEY")
+        self.model = config.model
+        self.max_context_tokens = config.max_context_tokens
         self.base_url = "https://openrouter.ai/api/v1/chat/completions"
         self.headers = {
             "Authorization": f"Bearer {self.api_key}",
@@ -199,15 +205,15 @@ class EnhancedRecursiveThinkingChat:
         }
         self.conversation_history: List[Dict] = []
         self.full_thinking_log: List[Dict] = []
-        self.caching_enabled = caching_enabled
-        self.cache_size = cache_size
+        self.caching_enabled = config.caching_enabled
+        self.cache_size = config.cache_size
         self.cache: OrderedDict[tuple[str, str], str] = OrderedDict()
-        self.disk_cache_path = disk_cache_path
-        self.disk_cache_size = disk_cache_size
+        self.disk_cache_path = config.disk_cache_path
+        self.disk_cache_size = config.disk_cache_size
         self.disk_cache: OrderedDict[tuple[str, str], str] = OrderedDict()
         if self.disk_cache_path:
             self._load_disk_cache()
-        self.max_retries = max_retries
+        self.max_retries = config.max_retries
         self.quality_assessor = QualityAssessor(self._semantic_similarity)
         try:
             self.tokenizer = tiktoken.get_encoding("cl100k_base")
@@ -215,7 +221,9 @@ class EnhancedRecursiveThinkingChat:
             buffer = io.StringIO()
             with contextlib.redirect_stdout(buffer):
                 self.tokenizer = _educational.train_simple_encoding()
-        self.context_manager = ContextManager(max_context_tokens, self.tokenizer)
+        self.context_manager = ContextManager(
+            config.max_context_tokens, self.tokenizer
+        )
         self.logger = structlog.get_logger(__name__)
 
     def _estimate_tokens(self, text: str) -> int:
@@ -699,8 +707,9 @@ def main():
             print("Error: No API key provided and OPENROUTER_API_KEY not found in environment")
             return
     
-    # Initialize chat
-    chat = EnhancedRecursiveThinkingChat(api_key=api_key)
+    # Initialize chat using configuration dataclass
+    config = CoRTConfig(api_key=api_key)
+    chat = EnhancedRecursiveThinkingChat(config)
     
     print("\nChat initialized! Type 'exit' to quit, 'save' to save conversation.")
     print("The AI will think recursively before each response.\n")

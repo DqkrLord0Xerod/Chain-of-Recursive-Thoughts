@@ -1,6 +1,4 @@
-from fastapi import FastAPI, WebSocket, HTTPException, Depends, Request, WebSocketDisconnect
-from fastapi.responses import JSONResponse, HTMLResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi import FastAPI, WebSocket, HTTPException, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import uvicorn
@@ -8,11 +6,11 @@ import json
 import os
 import asyncio
 from datetime import datetime
-from typing import List, Dict, Optional, Any
+from typing import Optional
 import logging
 
 # Import the main RecThink class
-from recursive_thinking_ai import EnhancedRecursiveThinkingChat
+from recursive_thinking_ai import EnhancedRecursiveThinkingChat, CoRTConfig
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -32,10 +30,12 @@ app.add_middleware(
 # Create a dictionary to store chat instances
 chat_instances = {}
 
+
 # Pydantic models for request/response validation
 class ChatConfig(BaseModel):
     api_key: str
     model: str = "mistralai/mistral-small-3.1-24b-instruct:free"
+
 
 class MessageRequest(BaseModel):
     session_id: str
@@ -43,10 +43,12 @@ class MessageRequest(BaseModel):
     thinking_rounds: Optional[int] = None
     alternatives_per_round: Optional[int] = 3
 
+
 class SaveRequest(BaseModel):
     session_id: str
     filename: Optional[str] = None
     full_log: bool = False
+
 
 @app.post("/api/initialize")
 async def initialize_chat(config: ChatConfig):
@@ -56,13 +58,16 @@ async def initialize_chat(config: ChatConfig):
         session_id = f"session_{datetime.now().strftime('%Y%m%d%H%M%S')}_{os.urandom(4).hex()}"
         
         # Initialize the chat instance
-        chat = EnhancedRecursiveThinkingChat(api_key=config.api_key, model=config.model)
+        chat = EnhancedRecursiveThinkingChat(
+            CoRTConfig(api_key=config.api_key, model=config.model)
+        )
         chat_instances[session_id] = chat
         
         return {"session_id": session_id, "status": "initialized"}
     except Exception as e:
         logger.error(f"Error initializing chat: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to initialize chat: {str(e)}")
+
 
 @app.post("/api/send_message")
 async def send_message(request: MessageRequest):
@@ -90,6 +95,7 @@ async def send_message(request: MessageRequest):
         logger.error(f"Error processing message: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to process message: {str(e)}")
 
+
 @app.post("/api/save")
 async def save_conversation(request: SaveRequest):
     """Save the conversation or full thinking log"""
@@ -110,6 +116,7 @@ async def save_conversation(request: SaveRequest):
         logger.error(f"Error saving conversation: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to save conversation: {str(e)}")
 
+
 @app.get("/api/sessions")
 async def list_sessions():
     """List all active chat sessions"""
@@ -123,6 +130,7 @@ async def list_sessions():
     
     return {"sessions": sessions}
 
+
 @app.delete("/api/sessions/{session_id}")
 async def delete_session(session_id: str):
     """Delete a chat session"""
@@ -131,6 +139,7 @@ async def delete_session(session_id: str):
     
     del chat_instances[session_id]
     return {"status": "deleted", "session_id": session_id}
+
 
 # WebSocket for streaming thinking process
 @app.websocket("/ws/{session_id}")
@@ -187,6 +196,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
     finally:
         # Restore original method
         chat._call_api = original_call_api
+
 
 # Serve the React app
 @app.get("/")

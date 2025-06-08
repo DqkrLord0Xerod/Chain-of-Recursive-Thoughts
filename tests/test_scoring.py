@@ -4,11 +4,14 @@ import json
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from recursive_thinking_ai import EnhancedRecursiveThinkingChat  # noqa: E402
+from recursive_thinking_ai import (  # noqa: E402
+    EnhancedRecursiveThinkingChat,
+    CoRTConfig,
+)
 
 
 def test_score_called(monkeypatch):
-    chat = EnhancedRecursiveThinkingChat(api_key="test")
+    chat = EnhancedRecursiveThinkingChat(CoRTConfig(api_key="test"))
     calls = []
 
     def fake_score(resp, prompt):
@@ -32,7 +35,7 @@ def test_score_called(monkeypatch):
 
 
 def test_quality_assessor_keys():
-    chat = EnhancedRecursiveThinkingChat(api_key="x")
+    chat = EnhancedRecursiveThinkingChat(CoRTConfig(api_key="x"))
     metrics = chat.quality_assessor.comprehensive_score("resp", "prompt")
     for key in ["relevance", "completeness", "clarity", "accuracy", "overall"]:
         assert key in metrics
