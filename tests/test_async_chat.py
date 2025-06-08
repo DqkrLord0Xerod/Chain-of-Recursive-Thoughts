@@ -13,6 +13,7 @@ from recursive_thinking_ai import (  # noqa: E402
 class DummyResponse:
     def __init__(self, text):
         self.text = text
+        self.status = 200
 
     async def __aenter__(self):
         return self

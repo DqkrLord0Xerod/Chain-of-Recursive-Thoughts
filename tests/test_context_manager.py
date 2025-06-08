@@ -52,6 +52,9 @@ def test_chat_uses_context_manager(monkeypatch):
             def raise_for_status(self):
                 pass
 
+            def __init__(self):
+                self.status_code = 200
+
             def iter_lines(self):
                 line = (
                     'data: {"choices": [{"delta": {"content": "' + text + '"}}]}'

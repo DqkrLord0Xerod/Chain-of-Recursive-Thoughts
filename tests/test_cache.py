@@ -17,6 +17,7 @@ def make_response(text):
                 'data: {"choices": [{"delta": {"content": "' + text + '"}}]}'
             )
             self.lines = [message.encode(), b"data: [DONE]"]
+            self.status_code = 200
 
         def raise_for_status(self):
             pass
