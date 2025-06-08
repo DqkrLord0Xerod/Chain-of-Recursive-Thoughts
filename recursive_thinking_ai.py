@@ -18,6 +18,7 @@ import time
 import structlog
 import asyncio
 import aiohttp
+from config.settings import settings
 
 logging.basicConfig(level=logging.INFO)
 structlog.configure(logger_factory=structlog.stdlib.LoggerFactory())
@@ -36,8 +37,10 @@ class ThinkingResult:
 class CoRTConfig:
     """Configuration for :class:`EnhancedRecursiveThinkingChat`."""
 
-    api_key: str | None = None
-    model: str = "mistralai/mistral-small-3.1-24b-instruct:free"
+    api_key: str | None = field(
+        default_factory=lambda: settings.openrouter_api_key
+    )
+    model: str = field(default_factory=lambda: settings.model)
     max_context_tokens: int = 2000
     caching_enabled: bool = True
     cache_size: int = 128
@@ -801,13 +804,12 @@ def main():
     print("🤖 Enhanced Recursive Thinking Chat")
     print("=" * 50)
     
-    # Get API key
-    api_key = input("Enter your OpenRouter API key (or press Enter to use env variable): ").strip()
+    api_key = settings.openrouter_api_key
     if not api_key:
-        api_key = os.getenv("OPENROUTER_API_KEY")
-        if not api_key:
-            print("Error: No API key provided and OPENROUTER_API_KEY not found in environment")
-            return
+        print(
+            "Error: OPENROUTER_API_KEY not set. Please export it or add to .env"
+        )
+        return
     
     # Initialize chat using configuration dataclass
     config = CoRTConfig(api_key=api_key)

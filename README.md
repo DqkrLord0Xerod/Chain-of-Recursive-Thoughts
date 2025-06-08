@@ -54,7 +54,10 @@ Mistral 3.1 24B non CoRT
 ## Try it yourself
 ```python
 pip install -r requirements.txt
+# Option 1: export your API key
 export OPENROUTER_API_KEY="your-key-here"
+# Option 2: place it in a `.env` file
+# OPENROUTER_API_KEY=your-key-here
 python recursive-thinking-ai.py
 ```
 You can also limit the context window by setting `max_context_tokens` in a

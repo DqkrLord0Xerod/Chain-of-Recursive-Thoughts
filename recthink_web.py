@@ -1,6 +1,7 @@
 from fastapi import FastAPI, WebSocket, HTTPException, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from config.settings import settings
 import uvicorn
 import json
 import os
@@ -33,8 +34,8 @@ chat_instances = {}
 
 # Pydantic models for request/response validation
 class ChatConfig(BaseModel):
-    api_key: str
-    model: str = "mistralai/mistral-small-3.1-24b-instruct:free"
+    api_key: str | None = settings.openrouter_api_key
+    model: str = settings.model
 
 
 class MessageRequest(BaseModel):
