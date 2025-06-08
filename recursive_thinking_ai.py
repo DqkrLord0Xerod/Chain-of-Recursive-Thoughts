@@ -1,11 +1,12 @@
-import openai
 import os
 from typing import List, Dict
 import json
 import requests
 from datetime import datetime
-import sys
-import time
+import logging
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 class EnhancedRecursiveThinkingChat:
     def __init__(self, api_key: str = None, model: str = "mistralai/mistral-small-3.1-24b-instruct:free"):
@@ -82,7 +83,10 @@ Respond with just a number between 1 and 5."""
         try:
             rounds = int(''.join(filter(str.isdigit, response)))
             return min(max(rounds, 1), 5)
-        except:
+        except (ValueError, TypeError) as e:
+            logger.error(
+                "Failed to parse thinking rounds from API response: %s", e
+            )
             return 3
     
     def _generate_alternatives(self, base_response: str, prompt: str, num_alternatives: int = 3) -> List[str]:
