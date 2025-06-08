@@ -6,6 +6,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from recursive_thinking_ai import (  # noqa: E402
     ContextManager,
     EnhancedRecursiveThinkingChat,
+    CoRTConfig,
 )
 import requests  # noqa: E402
 
@@ -34,7 +35,8 @@ def test_optimize_context_basic():
 
 
 def test_chat_uses_context_manager(monkeypatch):
-    chat = EnhancedRecursiveThinkingChat(api_key="x", max_context_tokens=4)
+    config = CoRTConfig(api_key="x", max_context_tokens=4)
+    chat = EnhancedRecursiveThinkingChat(config)
     chat.tokenizer = DummyTokenizer()
     chat.context_manager = ContextManager(4, chat.tokenizer)
     chat.conversation_history = [

@@ -57,8 +57,8 @@ pip install -r requirements.txt
 export OPENROUTER_API_KEY="your-key-here"
 python recursive-thinking-ai.py
 ```
-You can also limit the context window by passing `max_context_tokens` when
-creating `EnhancedRecursiveThinkingChat`.
+You can also limit the context window by setting `max_context_tokens` in a
+`CoRTConfig` instance when creating `EnhancedRecursiveThinkingChat`.
 
 ### The Secret Sauce
 The magic is in:

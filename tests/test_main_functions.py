@@ -7,23 +7,24 @@ import recursive_thinking_ai  # noqa: E402
 from recursive_thinking_ai import (  # noqa: E402
     EnhancedRecursiveThinkingChat,
     ConvergenceTracker,
+    CoRTConfig,
 )
 
 
 def test_determine_rounds_valid(monkeypatch):
-    chat = EnhancedRecursiveThinkingChat(api_key="test")
+    chat = EnhancedRecursiveThinkingChat(CoRTConfig(api_key="test"))
     monkeypatch.setattr(chat, "_call_api", lambda *a, **k: "4")
     assert chat._determine_thinking_rounds("prompt") == 4
 
 
 def test_determine_rounds_bounds(monkeypatch):
-    chat = EnhancedRecursiveThinkingChat(api_key="test")
+    chat = EnhancedRecursiveThinkingChat(CoRTConfig(api_key="test"))
     monkeypatch.setattr(chat, "_call_api", lambda *a, **k: "7")
     assert chat._determine_thinking_rounds("prompt") == 5
 
 
 def test_think_and_respond_flow(monkeypatch):
-    chat = EnhancedRecursiveThinkingChat(api_key="test")
+    chat = EnhancedRecursiveThinkingChat(CoRTConfig(api_key="test"))
     monkeypatch.setattr(chat, "_determine_thinking_rounds", lambda *a, **k: 1)
     monkeypatch.setattr(chat, "_call_api", lambda *a, **k: "initial")
     monkeypatch.setattr(
@@ -90,7 +91,7 @@ def test_convergence_tracker_oscillation():
 
 
 def test_think_and_respond_early_stop(monkeypatch):
-    chat = EnhancedRecursiveThinkingChat(api_key="test")
+    chat = EnhancedRecursiveThinkingChat(CoRTConfig(api_key="test"))
     monkeypatch.setattr(chat, "_determine_thinking_rounds", lambda *a, **k: 3)
     monkeypatch.setattr(chat, "_call_api", lambda *a, **k: "initial")
 
