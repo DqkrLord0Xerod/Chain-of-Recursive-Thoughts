@@ -94,6 +94,11 @@ pip install pytest flake8
 pytest
 ```
 
+To run only the integration scenarios:
+```bash
+pytest tests/test_integration.py
+```
+
 
 ### License
 MIT - Go wild with it
