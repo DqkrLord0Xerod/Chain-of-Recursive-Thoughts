@@ -1,9 +1,11 @@
 import os
-from typing import List, Dict
 import json
-import requests
-from datetime import datetime
 import logging
+import hashlib
+from collections import OrderedDict
+from typing import List, Dict
+from datetime import datetime
+import requests
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -15,13 +17,17 @@ class EnhancedRecursiveThinkingChat:
         api_key: str | None = None,
         model: str = "mistralai/mistral-small-3.1-24b-instruct:free",
         max_context_tokens: int = 2000,
+        caching_enabled: bool = True,
+        cache_size: int = 128,
     ) -> None:
         """Initialize with OpenRouter API.
 
         Args:
             api_key: The API key for OpenRouter.
             model: The model identifier.
-            max_context_tokens: Maximum tokens to keep in conversation history.
+            max_context_tokens: Maximum tokens to keep in history.
+            caching_enabled: Enable the in-memory cache.
+            cache_size: Maximum entries to store in the cache.
         """
         self.api_key = api_key or os.getenv("OPENROUTER_API_KEY")
         self.model = model
@@ -35,6 +41,9 @@ class EnhancedRecursiveThinkingChat:
         }
         self.conversation_history: List[Dict] = []
         self.full_thinking_log: List[Dict] = []
+        self.caching_enabled = caching_enabled
+        self.cache_size = cache_size
+        self.cache: OrderedDict[tuple[str, str], str] = OrderedDict()
 
     @staticmethod
     def _estimate_tokens(text: str) -> int:
@@ -54,13 +63,30 @@ class EnhancedRecursiveThinkingChat:
                 break
             self.conversation_history.pop(0)
 
+    def _cache_key(self, messages: List[Dict]) -> tuple[str, str]:
+        """Return a cache key based on prompt and context hash."""
+        if not messages:
+            return "", ""
+        prompt = messages[-1].get("content", "")
+        context = json.dumps(messages[:-1], sort_keys=True)
+        context_hash = hashlib.md5(context.encode("utf-8")).hexdigest()
+        return prompt, context_hash
+
     def _call_api(
         self,
         messages: List[Dict],
         temperature: float = 0.7,
         stream: bool = True,
     ) -> str:
-        """Make an API call to OpenRouter with streaming support."""
+        """Make an API call to OpenRouter with optional caching."""
+        cache_key = self._cache_key(messages)
+        if self.caching_enabled and cache_key in self.cache:
+            cached = self.cache[cache_key]
+            if stream:
+                print(cached)
+            # Move key to end to mark as recently used
+            self.cache.move_to_end(cache_key)
+            return cached
         payload = {
             "model": self.model,
             "messages": messages,
@@ -100,9 +126,14 @@ class EnhancedRecursiveThinkingChat:
                             except json.JSONDecodeError:
                                 continue
                 print()  # New line after streaming
-                return full_response
+                result = full_response
             else:
-                return response.json()['choices'][0]['message']['content'].strip()
+                result = response.json()['choices'][0]['message']['content'].strip()
+            if self.caching_enabled:
+                self.cache[cache_key] = result
+                if len(self.cache) > self.cache_size:
+                    self.cache.popitem(last=False)
+            return result
         except Exception as e:
             print(f"API Error: {e}")
             return "Error: Could not get response from API"
