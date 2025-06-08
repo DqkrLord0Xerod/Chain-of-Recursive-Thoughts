@@ -8,22 +8,58 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+
 class EnhancedRecursiveThinkingChat:
-    def __init__(self, api_key: str = None, model: str = "mistralai/mistral-small-3.1-24b-instruct:free"):
-        """Initialize with OpenRouter API."""
+    def __init__(
+        self,
+        api_key: str | None = None,
+        model: str = "mistralai/mistral-small-3.1-24b-instruct:free",
+        max_context_tokens: int = 2000,
+    ) -> None:
+        """Initialize with OpenRouter API.
+
+        Args:
+            api_key: The API key for OpenRouter.
+            model: The model identifier.
+            max_context_tokens: Maximum tokens to keep in conversation history.
+        """
         self.api_key = api_key or os.getenv("OPENROUTER_API_KEY")
         self.model = model
+        self.max_context_tokens = max_context_tokens
         self.base_url = "https://openrouter.ai/api/v1/chat/completions"
         self.headers = {
             "Authorization": f"Bearer {self.api_key}",
             "HTTP-Referer": "http://localhost:3000",
             "X-Title": "Recursive Thinking Chat",
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
         }
-        self.conversation_history = []
-        self.full_thinking_log = []
-    
-    def _call_api(self, messages: List[Dict], temperature: float = 0.7, stream: bool = True) -> str:
+        self.conversation_history: List[Dict] = []
+        self.full_thinking_log: List[Dict] = []
+
+    @staticmethod
+    def _estimate_tokens(text: str) -> int:
+        """Return a rough token count for the given text."""
+        return len(text.split())
+
+    def _history_token_count(self) -> int:
+        return sum(
+            self._estimate_tokens(m.get("content", ""))
+            for m in self.conversation_history
+        )
+
+    def _trim_conversation_history(self) -> None:
+        """Trim conversation history to fit within ``max_context_tokens``."""
+        while self._history_token_count() > self.max_context_tokens:
+            if not self.conversation_history:
+                break
+            self.conversation_history.pop(0)
+
+    def _call_api(
+        self,
+        messages: List[Dict],
+        temperature: float = 0.7,
+        stream: bool = True,
+    ) -> str:
         """Make an API call to OpenRouter with streaming support."""
         payload = {
             "model": self.model,
@@ -34,9 +70,14 @@ class EnhancedRecursiveThinkingChat:
                 "max_tokens": 10386,
             }
         }
-        
+
         try:
-            response = requests.post(self.base_url, headers=self.headers, json=payload, stream=stream)
+            response = requests.post(
+                self.base_url,
+                headers=self.headers,
+                json=payload,
+                stream=stream,
+            )
             response.raise_for_status()
             
             if stream:
@@ -275,9 +316,8 @@ Then on a new line, explain your choice in one sentence."""
         self.conversation_history.append({"role": "user", "content": user_input})
         self.conversation_history.append({"role": "assistant", "content": current_best})
         
-        # Keep conversation history manageable
-        if len(self.conversation_history) > 10:
-            self.conversation_history = self.conversation_history[-10:]
+        # Keep conversation history within the configured token limit
+        self._trim_conversation_history()
         
         print("\n" + "=" * 50)
         print("🎯 FINAL RESPONSE SELECTED")
