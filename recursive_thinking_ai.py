@@ -6,6 +6,10 @@ from collections import OrderedDict
 from typing import List, Dict
 from datetime import datetime
 import requests
+import tiktoken
+from tiktoken import _educational
+import contextlib
+import io
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -44,11 +48,16 @@ class EnhancedRecursiveThinkingChat:
         self.caching_enabled = caching_enabled
         self.cache_size = cache_size
         self.cache: OrderedDict[tuple[str, str], str] = OrderedDict()
+        try:
+            self.tokenizer = tiktoken.get_encoding("cl100k_base")
+        except Exception:
+            buffer = io.StringIO()
+            with contextlib.redirect_stdout(buffer):
+                self.tokenizer = _educational.train_simple_encoding()
 
-    @staticmethod
-    def _estimate_tokens(text: str) -> int:
-        """Return a rough token count for the given text."""
-        return len(text.split())
+    def _estimate_tokens(self, text: str) -> int:
+        """Return the token count for the given text."""
+        return len(self.tokenizer.encode(text))
 
     def _history_token_count(self) -> int:
         return sum(
