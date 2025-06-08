@@ -30,11 +30,32 @@ def test_optimize_context_basic():
     assert len(trimmed) <= 4
 
 
+def test_optimize_context_with_summary():
+    manager = ContextManager(
+        max_tokens=4,
+        tokenizer=DummyTokenizer(),
+        summarizer=lambda msgs: "sum",
+    )
+    history = [
+        {"role": "system", "content": "sys"},
+        {"role": "user", "content": "u1"},
+        {"role": "assistant", "content": "a1"},
+        {"role": "user", "content": "u2"},
+        {"role": "assistant", "content": "a2"},
+        {"role": "user", "content": "u3"},
+        {"role": "assistant", "content": "a3"},
+    ]
+    trimmed = manager.optimize_context(history)
+    assert trimmed[1] == {"role": "system", "content": "sum"}
+    assert trimmed[-1]["content"] == "a3"
+    assert {"role": "user", "content": "u2"} not in trimmed
+
+
 def test_chat_uses_context_manager(monkeypatch):
     config = CoRTConfig(api_key="x", max_context_tokens=4)
     chat = EnhancedRecursiveThinkingChat(config)
     chat.tokenizer = DummyTokenizer()
-    chat.context_manager = ContextManager(4, chat.tokenizer)
+    chat.context_manager = ContextManager(4, chat.tokenizer, summarizer=lambda m: "sum")
     chat.conversation_history = [
         {"role": "system", "content": "sys"},
         {"role": "user", "content": "u1"},
@@ -84,5 +105,6 @@ def test_chat_uses_context_manager(monkeypatch):
     chat.think_and_respond("u3", verbose=False)
 
     assert chat.conversation_history[0]["role"] == "system"
+    assert chat.conversation_history[1] == {"role": "system", "content": "sum"}
     assert {"role": "user", "content": "u1"} not in chat.conversation_history
     assert chat.conversation_history[-1]["content"] == "resp"

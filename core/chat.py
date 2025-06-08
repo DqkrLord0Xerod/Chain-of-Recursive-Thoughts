@@ -89,7 +89,9 @@ class EnhancedRecursiveThinkingChat:
             buffer = io.StringIO()
             with contextlib.redirect_stdout(buffer):
                 self.tokenizer = _educational.train_simple_encoding()
-        self.context_manager = ContextManager(config.max_context_tokens, self.tokenizer)
+        self.context_manager = ContextManager(
+            config.max_context_tokens, self.tokenizer, self._summarize_messages
+        )
         self.logger = structlog.get_logger(__name__)
 
     # ------------------------------------
@@ -105,6 +107,17 @@ class EnhancedRecursiveThinkingChat:
 
     def _trim_conversation_history(self) -> None:
         self.conversation_history = self.context_manager.optimize_context(self.conversation_history)
+
+    def _summarize_messages(self, messages: List[Dict]) -> str:
+        """Summarize a list of messages preserving decisions and intent."""
+        content = "\n".join(f"{m.get('role')}: {m.get('content')}" for m in messages)
+        prompt = (
+            "Summarize the following conversation in a concise form while "
+            "preserving intent and prior decisions:\n" + content
+        )
+        return openrouter.sync_chat_completion(
+            self.headers, [{"role": "user", "content": prompt}], self.model, stream=False, temperature=0.3
+        )
 
     def _load_disk_cache(self) -> None:
         if not self.disk_cache_path or not os.path.exists(self.disk_cache_path):
