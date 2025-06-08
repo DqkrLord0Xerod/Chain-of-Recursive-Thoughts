@@ -58,6 +58,11 @@ pip install -r requirements.txt
 export OPENROUTER_API_KEY="your-key-here"
 # Option 2: place it in a `.env` file
 # OPENROUTER_API_KEY=your-key-here
+# Select environment (development|staging|production)
+export APP_ENV=development
+# Optional overrides
+# API_BASE_URL=https://api.example.com
+# WS_BASE_URL=wss://api.example.com
 python recursive-thinking-ai.py
 ```
 You can also limit the context window by setting `max_context_tokens` in a

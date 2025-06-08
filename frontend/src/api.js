@@ -1,5 +1,5 @@
 // API client for RecThink
-const API_BASE_URL = 'http://localhost:8000/api';
+const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || 'http://localhost:8000/api';
 
 export const initializeChat = async (apiKey, model) => {
   const response = await fetch(`${API_BASE_URL}/initialize`, {
@@ -81,6 +81,7 @@ export const deleteSession = async (sessionId) => {
 };
 
 export const createWebSocketConnection = (sessionId) => {
-  const ws = new WebSocket(`ws://localhost:8000/ws/${sessionId}`);
+  const wsBase = process.env.REACT_APP_WS_BASE_URL || 'ws://localhost:8000';
+  const ws = new WebSocket(`${wsBase}/ws/${sessionId}`);
   return ws;
 };
