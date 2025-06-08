@@ -2,6 +2,8 @@ import os
 import json
 import logging
 import hashlib
+import math
+import re
 from collections import OrderedDict
 from typing import List, Dict
 from datetime import datetime
@@ -202,70 +204,121 @@ Respond with just a number between 1 and 5."""
             line.strip() for line in raw_result.split("\n") if line.strip()
         ][:num_alternatives]
 
-    def _score_response(self, response: str, prompt: str) -> float:
-        """Return a simple overlap score between the prompt and the response.
-
-        The score is the fraction of prompt words that also appear in the
-        candidate response. It ranges from 0.0 to 1.0.
-        """
-        prompt_words = set(prompt.lower().split())
-        resp_words = set(response.lower().split())
-        if not prompt_words:
+    @staticmethod
+    def _simple_overlap(text1: str, text2: str) -> float:
+        """Return a simple lexical overlap score."""
+        words1 = set(text1.lower().split())
+        words2 = set(text2.lower().split())
+        if not words1:
             return 0.0
-        return len(prompt_words & resp_words) / len(prompt_words)
-    
-    def _evaluate_responses(self, prompt: str, current_best: str, alternatives: List[str]) -> tuple[str, str]:
+        return len(words1 & words2) / len(words1)
+
+    def _semantic_similarity(self, text1: str, text2: str) -> float:
+        """Return semantic similarity using embeddings with fallback."""
+        if not text1 or not text2:
+            return 0.0
+        url = "https://openrouter.ai/api/v1/embeddings"
+        payload = {
+            "model": "openai/text-embedding-ada-002",
+            "input": [text1, text2],
+        }
+        try:
+            resp = requests.post(url, headers=self.headers, json=payload)
+            resp.raise_for_status()
+            data = resp.json()
+            emb1 = data["data"][0]["embedding"]
+            emb2 = data["data"][1]["embedding"]
+            dot = sum(a * b for a, b in zip(emb1, emb2))
+            norm1 = math.sqrt(sum(a * a for a in emb1))
+            norm2 = math.sqrt(sum(b * b for b in emb2))
+            if not norm1 or not norm2:
+                return 0.0
+            return dot / (norm1 * norm2)
+        except Exception as e:
+            logger.error("Embedding similarity failed: %s", e)
+            return self._simple_overlap(text1, text2)
+
+    def _score_response(self, response: str, prompt: str) -> float:
+        """Return a semantic similarity score for ranking."""
+        return self._semantic_similarity(prompt, response)
+
+    def _evaluate_responses(
+        self, prompt: str, current_best: str, alternatives: List[str]
+    ) -> tuple[str, str]:
         """Evaluate responses and select the best one."""
         print("\n=== EVALUATING RESPONSES ===")
+        numbered = chr(10).join(
+            [f"{i + 1}. {alt}" for i, alt in enumerate(alternatives)]
+        )
         eval_prompt = f"""Original message: {prompt}
-
-Evaluate these responses and choose the best one:
 
 Current best: {current_best}
 
 Alternatives:
-{chr(10).join([f"{i + 1}. {alt}" for i, alt in enumerate(alternatives)])}
+{numbered}
 
-Which response best addresses the original message? Consider accuracy, clarity, and completeness.
-First, respond with ONLY 'current' or a number (1-{len(alternatives)}).
-Then on a new line, explain your choice in one sentence."""
-        
+Rate each response for accuracy, completeness, clarity, and relevance on a
+scale of 1-10. Respond in JSON like:
+{{"current": {{"accuracy": 8, "completeness": 8, "clarity": 8,
+"relevance": 8}}, "1": {{...}}, "choice": "1", "reason": "text"}}"""
+
         messages = [{"role": "user", "content": eval_prompt}]
         evaluation = self._call_api(messages, temperature=0.2, stream=True)
         print("=" * 50)
-        
-        # Better parsing
-        lines = [line.strip() for line in evaluation.split('\n') if line.strip()]
-        
-        choice = 'current'
+
+        data: Dict | None = None
+        choice = "current"
         explanation = "No explanation provided"
-        
-        if lines:
-            first_line = lines[0].lower()
-            if 'current' in first_line:
-                choice = 'current'
-            else:
-                for char in first_line:
-                    if char.isdigit():
-                        choice = char
-                        break
-            
-            if len(lines) > 1:
-                explanation = ' '.join(lines[1:])
-        
-        # Compute a heuristic score for the current response and all
-        # alternatives based on word overlap with the prompt.
-        scores = [self._score_response(current_best, prompt)] + [
-            self._score_response(a, prompt) for a in alternatives
-        ]
+
+        try:
+            data = json.loads(evaluation)
+        except json.JSONDecodeError:
+            match = re.search(r"\{.*\}", evaluation, re.S)
+            if match:
+                try:
+                    data = json.loads(match.group(0))
+                except json.JSONDecodeError:
+                    data = None
+
+        if isinstance(data, dict):
+            choice = str(data.get("choice", choice)).lower()
+            explanation = data.get("reason", explanation)
+            score_map = {k: v for k, v in data.items() if isinstance(v, dict)}
+        else:
+            lines = [line.strip() for line in evaluation.split("\n") if line.strip()]
+            score_map = {}
+            if lines:
+                first = lines[0].lower()
+                if "current" in first:
+                    choice = "current"
+                else:
+                    for char in first:
+                        if char.isdigit():
+                            choice = char
+                            break
+                if len(lines) > 1:
+                    explanation = " ".join(lines[1:])
+
+        responses = [current_best] + alternatives
+        labels = ["current"] + [str(i + 1) for i in range(len(alternatives))]
+
+        scores = []
+        for label, resp in zip(labels, responses):
+            base = self._score_response(resp, prompt)
+            metrics = score_map.get(label, {})
+            model_score = sum(
+                float(metrics.get(m, 0))
+                for m in ("accuracy", "completeness", "clarity", "relevance")
+            )
+            model_score /= 40.0
+            scores.append(base + model_score)
 
         try:
             model_index = 0 if choice == "current" else int(choice)
         except Exception:
-            model_index = 0
+            model_index = None
 
-        # Boost the score of the response chosen by the model.
-        if 0 <= model_index < len(scores):
+        if model_index is not None and 0 <= model_index < len(scores):
             scores[model_index] += 1.0
 
         best_idx = max(range(len(scores)), key=lambda i: scores[i])
@@ -273,6 +326,7 @@ Then on a new line, explain your choice in one sentence."""
         if best_idx == 0:
             return current_best, explanation
         return alternatives[best_idx - 1], explanation
+    
     
     def think_and_respond(
         self,
