@@ -110,6 +110,50 @@ class QualityAssessor:
         return metrics
 
 
+class ContextManager:
+    """Manage pruning of conversation history to fit token limits."""
+
+    def __init__(self, max_tokens: int, tokenizer) -> None:
+        self.max_tokens = max_tokens
+        self.tokenizer = tokenizer
+
+    def _count(self, text: str) -> int:
+        return len(self.tokenizer.encode(text))
+
+    def optimize_context(self, messages: List[Dict]) -> List[Dict]:
+        """Return a trimmed list of messages within the token budget."""
+        if not messages:
+            return []
+
+        def msg_tokens(msg: Dict) -> int:
+            return self._count(msg.get("content", ""))
+
+        total = sum(msg_tokens(m) for m in messages)
+        if total <= self.max_tokens:
+            return list(messages)
+
+        system_msgs = [m for m in messages if m.get("role") == "system"]
+        non_system = [m for m in messages if m.get("role") != "system"]
+
+        trimmed_sys: List[Dict] = []
+        token_total = 0
+        for msg in reversed(system_msgs):
+            t = msg_tokens(msg)
+            if token_total + t <= self.max_tokens:
+                trimmed_sys.insert(0, msg)
+                token_total += t
+
+        non_system_trim: List[Dict] = []
+        for msg in reversed(non_system):
+            t = msg_tokens(msg)
+            if token_total + t > self.max_tokens:
+                break
+            non_system_trim.insert(0, msg)
+            token_total += t
+
+        return trimmed_sys + non_system_trim
+
+
 class EnhancedRecursiveThinkingChat:
     def __init__(
         self,
@@ -160,6 +204,7 @@ class EnhancedRecursiveThinkingChat:
             buffer = io.StringIO()
             with contextlib.redirect_stdout(buffer):
                 self.tokenizer = _educational.train_simple_encoding()
+        self.context_manager = ContextManager(max_context_tokens, self.tokenizer)
 
     def _estimate_tokens(self, text: str) -> int:
         """Return the token count for the given text."""
@@ -172,11 +217,10 @@ class EnhancedRecursiveThinkingChat:
         )
 
     def _trim_conversation_history(self) -> None:
-        """Trim conversation history to fit within ``max_context_tokens``."""
-        while self._history_token_count() > self.max_context_tokens:
-            if not self.conversation_history:
-                break
-            self.conversation_history.pop(0)
+        """Trim conversation history using ``ContextManager``."""
+        self.conversation_history = self.context_manager.optimize_context(
+            self.conversation_history
+        )
 
     def _load_disk_cache(self) -> None:
         """Load persistent cache entries from disk."""
@@ -220,6 +264,7 @@ class EnhancedRecursiveThinkingChat:
         stream: bool = True,
     ) -> str:
         """Make an API call to OpenRouter with optional caching."""
+        messages = self.context_manager.optimize_context(messages)
         cache_key = self._cache_key(messages)
         if self.caching_enabled:
             if cache_key in self.cache:
