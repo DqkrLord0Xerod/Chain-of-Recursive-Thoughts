@@ -35,7 +35,14 @@
   cd frontend && npm start     # frontend UI
   ```
 
+
 ## Tests
-- Place Python tests under a `tests/` directory and run them with `pytest`.
+- Place Python tests under a `tests/` directory.
+- Install dependencies and run `pytest`:
+  ```bash
+  pip install -r requirements.txt
+  pip install pytest flake8
+  pytest
+  ```
 - Frontend tests run with `npm test`.
 - Always run all tests before opening a pull request.
