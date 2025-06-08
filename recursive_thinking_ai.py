@@ -1,6 +1,7 @@
 import os
 import json
 import logging
+from dataclasses import dataclass, field
 import hashlib
 import math
 import re
@@ -14,9 +15,19 @@ from tiktoken import _educational
 import contextlib
 import io
 import time
+import structlog
 
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+structlog.configure(logger_factory=structlog.stdlib.LoggerFactory())
+
+
+@dataclass
+class ThinkingResult:
+    response: str
+    thinking_rounds: int
+    thinking_history: List[Dict]
+    api_calls: List[Dict] = field(default_factory=list)
+    processing_time: float = 0.0
 
 
 class ConvergenceTracker:
@@ -205,6 +216,7 @@ class EnhancedRecursiveThinkingChat:
             with contextlib.redirect_stdout(buffer):
                 self.tokenizer = _educational.train_simple_encoding()
         self.context_manager = ContextManager(max_context_tokens, self.tokenizer)
+        self.logger = structlog.get_logger(__name__)
 
     def _estimate_tokens(self, text: str) -> int:
         """Return the token count for the given text."""
@@ -236,7 +248,7 @@ class EnhancedRecursiveThinkingChat:
                 for k in list(self.disk_cache)[-self.cache_size:]:
                     self.cache[k] = self.disk_cache[k]
         except Exception as e:  # pragma: no cover - logging not tested
-            logger.warning("Failed to load disk cache: %s", e)
+            self.logger.warning("Failed to load disk cache: %s", e)
 
     def _save_disk_cache(self) -> None:
         """Persist cache entries to disk."""
@@ -246,7 +258,7 @@ class EnhancedRecursiveThinkingChat:
             with open(self.disk_cache_path, "wb") as f:
                 pickle.dump(self.disk_cache, f)
         except Exception as e:  # pragma: no cover - logging not tested
-            logger.warning("Failed to save disk cache: %s", e)
+            self.logger.warning("Failed to save disk cache: %s", e)
 
     def _cache_key(self, messages: List[Dict]) -> tuple[str, str]:
         """Return a cache key based on prompt and context hash."""
@@ -266,21 +278,26 @@ class EnhancedRecursiveThinkingChat:
         """Make an API call to OpenRouter with optional caching."""
         messages = self.context_manager.optimize_context(messages)
         cache_key = self._cache_key(messages)
+        api_entry = {"messages": messages}
         if self.caching_enabled:
             if cache_key in self.cache:
                 cached = self.cache[cache_key]
                 if stream:
-                    print(cached)
+                    self.logger.info(cached)
                 self.cache.move_to_end(cache_key)
+                api_entry["response"] = cached
+                self.full_thinking_log.append(api_entry)
                 return cached
             if self.disk_cache_path and cache_key in self.disk_cache:
                 cached = self.disk_cache[cache_key]
                 if stream:
-                    print(cached)
+                    self.logger.info(cached)
                 self.cache[cache_key] = cached
                 self.cache.move_to_end(cache_key)
                 if len(self.cache) > self.cache_size:
                     self.cache.popitem(last=False)
+                api_entry["response"] = cached
+                self.full_thinking_log.append(api_entry)
                 return cached
         payload = {
             "model": self.model,
@@ -323,10 +340,9 @@ class EnhancedRecursiveThinkingChat:
                                         content = delta.get("content", "")
                                         if content:
                                             full_response += content
-                                            print(content, end="", flush=True)
+                                            self.logger.info(content)
                                 except json.JSONDecodeError:
                                     continue
-                    print()
                     result = full_response
                 else:
                     result = (
@@ -344,9 +360,11 @@ class EnhancedRecursiveThinkingChat:
                         while len(self.disk_cache) > self.disk_cache_size:
                             self.disk_cache.popitem(last=False)
                         self._save_disk_cache()
+                api_entry["response"] = result
+                self.full_thinking_log.append(api_entry)
                 return result
             except Exception as e:  # pragma: no cover - logging not tested
-                logger.warning(
+                self.logger.warning(
                     "API call failed (attempt %s/%s): %s",
                     attempt,
                     self.max_retries,
@@ -366,15 +384,15 @@ Respond with just a number between 1 and 5."""
         
         messages = [{"role": "user", "content": meta_prompt}]
         
-        print("\n=== DETERMINING THINKING ROUNDS ===")
+        self.logger.info("=== DETERMINING THINKING ROUNDS ===")
         response = self._call_api(messages, temperature=0.3, stream=True)
-        print("=" * 50 + "\n")
+        self.logger.info("=" * 50)
         
         try:
             rounds = int(''.join(filter(str.isdigit, response)))
             return min(max(rounds, 1), 5)
         except (ValueError, TypeError) as e:
-            logger.error(
+            self.logger.error(
                 "Failed to parse thinking rounds from API response: %s", e
             )
             return 3
@@ -411,7 +429,7 @@ Respond with just a number between 1 and 5."""
                 return 0.0
             return dot / (norm1 * norm2)
         except Exception as e:
-            logger.error("Embedding similarity failed: %s", e)
+            self.logger.error("Embedding similarity failed: %s", e)
             return self._simple_overlap(text1, text2)
 
     def _score_response(self, response: str, prompt: str) -> float:
@@ -527,7 +545,7 @@ Respond with just a number between 1 and 5."""
         verbose: bool = True,
         thinking_rounds: int | None = None,
         alternatives_per_round: int = 3,
-    ) -> Dict:
+    ) -> ThinkingResult:
         """Process user input with recursive thinking.
 
         Args:
@@ -538,23 +556,25 @@ Respond with just a number between 1 and 5."""
             alternatives_per_round: Number of alternative responses generated
                 in each round.
         """
-        print("\n" + "=" * 50)
-        print("🤔 RECURSIVE THINKING PROCESS STARTING")
-        print("=" * 50)
+        self.logger.info("=" * 50)
+        self.logger.info("🤔 RECURSIVE THINKING PROCESS STARTING")
+        self.logger.info("=" * 50)
+        start_index = len(self.full_thinking_log)
+        start_time = time.time()
         
         if thinking_rounds is None:
             thinking_rounds = self._determine_thinking_rounds(user_input)
         
         if verbose:
-            print(f"\n🤔 Thinking... ({thinking_rounds} rounds needed)")
+            self.logger.info("🤔 Thinking... (%s rounds needed)", thinking_rounds)
         
         # Initial response
-        print("\n=== GENERATING INITIAL RESPONSE ===")
+        self.logger.info("=== GENERATING INITIAL RESPONSE ===")
         messages = self.conversation_history + [
             {"role": "user", "content": user_input}
         ]
         current_best = self._call_api(messages, stream=True)
-        print("=" * 50)
+        self.logger.info("=" * 50)
 
         thinking_history = [
             {"round": 0, "response": current_best, "selected": True}
@@ -571,7 +591,9 @@ Respond with just a number between 1 and 5."""
         # Iterative improvement
         for round_num in range(1, thinking_rounds + 1):
             if verbose:
-                print(f"\n=== ROUND {round_num}/{thinking_rounds} ===")
+                self.logger.info(
+                    "=== ROUND %s/%s ===", round_num, thinking_rounds
+                )
             
             # Generate alternatives and evaluate in one call
             new_best, alternatives, explanation = self._batch_generate_and_evaluate(
@@ -598,7 +620,9 @@ Respond with just a number between 1 and 5."""
                 current_best = new_best
                 
                 if verbose:
-                    print(f"\n    ✓ Selected alternative: {explanation}")
+                    self.logger.info(
+                        "    \u2713 Selected alternative: %s", explanation
+                    )
             else:
                 for item in thinking_history:
                     if item["selected"] and item["response"] == current_best:
@@ -606,7 +630,9 @@ Respond with just a number between 1 and 5."""
                         break
                 
                 if verbose:
-                    print(f"\n    ✓ Kept current response: {explanation}")
+                    self.logger.info(
+                        "    \u2713 Kept current response: %s", explanation
+                    )
 
             tracker.add(current_best, user_input)
             cont, _ = tracker.should_continue(user_input)
@@ -620,15 +646,18 @@ Respond with just a number between 1 and 5."""
         # Keep conversation history within the configured token limit
         self._trim_conversation_history()
         
-        print("\n" + "=" * 50)
-        print("🎯 FINAL RESPONSE SELECTED")
-        print("=" * 50)
-        
-        return {
-            "response": current_best,
-            "thinking_rounds": thinking_rounds,
-            "thinking_history": thinking_history
-        }
+        self.logger.info("=" * 50)
+        self.logger.info("🎯 FINAL RESPONSE SELECTED")
+        self.logger.info("=" * 50)
+        api_calls = self.full_thinking_log[start_index:]
+        processing_time = time.time() - start_time
+        return ThinkingResult(
+            response=current_best,
+            thinking_rounds=thinking_rounds,
+            thinking_history=thinking_history,
+            api_calls=api_calls,
+            processing_time=processing_time,
+        )
     
     def save_full_log(self, filename: str = None):
         """Save the full thinking process log."""
@@ -642,7 +671,7 @@ Respond with just a number between 1 and 5."""
                 "timestamp": datetime.now().isoformat()
             }, f, indent=2, ensure_ascii=False)
         
-        print(f"Full thinking log saved to {filename}")
+        self.logger.info("Full thinking log saved to %s", filename)
     
     def save_conversation(self, filename: str = None):
         """Save the conversation and thinking history."""
@@ -655,7 +684,7 @@ Respond with just a number between 1 and 5."""
                 "timestamp": datetime.now().isoformat()
             }, f, indent=2, ensure_ascii=False)
         
-        print(f"Conversation saved to {filename}")
+        self.logger.info("Conversation saved to %s", filename)
 
 
 def main():

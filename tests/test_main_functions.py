@@ -35,14 +35,16 @@ def test_think_and_respond_flow(monkeypatch):
 
     result = chat.think_and_respond("hi", verbose=False)
 
-    assert result["response"] == "alt1"
-    assert result["thinking_rounds"] == 1
+    assert result.response == "alt1"
+    assert result.thinking_rounds == 1
     assert chat.conversation_history[-1]["content"] == "alt1"
     assert any(
         item.get("selected")
-        for item in result["thinking_history"]
+        for item in result.thinking_history
         if item["response"] == "alt1"
     )
+    assert hasattr(result, "api_calls")
+    assert hasattr(result, "processing_time")
 
 
 def test_convergence_tracker():
@@ -115,4 +117,6 @@ def test_think_and_respond_early_stop(monkeypatch):
     result = chat.think_and_respond("hi", verbose=False)
 
     assert len(gen_calls) == 1
-    assert len([i for i in result["thinking_history"] if i.get("round") == 1]) == 1
+    assert len([i for i in result.thinking_history if i.get("round") == 1]) == 1
+    assert hasattr(result, "api_calls")
+    assert hasattr(result, "processing_time")
