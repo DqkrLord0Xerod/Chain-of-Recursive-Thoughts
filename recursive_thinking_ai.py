@@ -16,6 +16,8 @@ import contextlib
 import io
 import time
 import structlog
+import asyncio
+import aiohttp
 
 logging.basicConfig(level=logging.INFO)
 structlog.configure(logger_factory=structlog.stdlib.LoggerFactory())
@@ -693,6 +695,106 @@ Respond with just a number between 1 and 5."""
             }, f, indent=2, ensure_ascii=False)
         
         self.logger.info("Conversation saved to %s", filename)
+
+
+class AsyncEnhancedRecursiveThinkingChat(EnhancedRecursiveThinkingChat):
+    """Asynchronous variant of :class:`EnhancedRecursiveThinkingChat`."""
+
+    async def _async_call_api(
+        self,
+        messages: List[Dict],
+        temperature: float = 0.7,
+        stream: bool = False,
+    ) -> str:
+        """Async API call using ``aiohttp`` with caching."""
+
+        messages = self.context_manager.optimize_context(messages)
+        cache_key = self._cache_key(messages)
+        api_entry = {"messages": messages}
+
+        if self.caching_enabled:
+            if cache_key in self.cache:
+                result = self.cache[cache_key]
+                api_entry["response"] = result
+                self.full_thinking_log.append(api_entry)
+                return result
+            if self.disk_cache_path and cache_key in self.disk_cache:
+                result = self.disk_cache[cache_key]
+                self.cache[cache_key] = result
+                self.cache.move_to_end(cache_key)
+                if len(self.cache) > self.cache_size:
+                    self.cache.popitem(last=False)
+                api_entry["response"] = result
+                self.full_thinking_log.append(api_entry)
+                return result
+
+        payload = {
+            "model": self.model,
+            "messages": messages,
+            "temperature": temperature,
+            "stream": False,
+            "reasoning": {"max_tokens": 10386},
+        }
+
+        for attempt in range(1, self.max_retries + 1):
+            try:
+                async with aiohttp.ClientSession() as session:
+                    async with session.post(
+                        self.base_url,
+                        headers=self.headers,
+                        json=payload,
+                    ) as response:
+                        response.raise_for_status()
+                        data = await response.json()
+
+                result = data["choices"][0]["message"]["content"].strip()
+
+                if self.caching_enabled:
+                    self.cache[cache_key] = result
+                    self.cache.move_to_end(cache_key)
+                    if len(self.cache) > self.cache_size:
+                        self.cache.popitem(last=False)
+                    if self.disk_cache_path:
+                        self.disk_cache[cache_key] = result
+                        self.disk_cache.move_to_end(cache_key)
+                        while len(self.disk_cache) > self.disk_cache_size:
+                            self.disk_cache.popitem(last=False)
+                        self._save_disk_cache()
+
+                api_entry["response"] = result
+                self.full_thinking_log.append(api_entry)
+                return result
+            except Exception as e:
+                self.logger.warning(
+                    "API call failed (attempt %s/%s): %s",
+                    attempt,
+                    self.max_retries,
+                    e,
+                )
+                if attempt == self.max_retries:
+                    return "Error: Could not get response from API"
+                await asyncio.sleep(2 ** (attempt - 1))
+
+    async def _parallel_alternative_generation(
+        self,
+        current_best: str,
+        prompt: str,
+        num_alternatives: int = 3,
+    ) -> List[str]:
+        """Generate alternatives concurrently."""
+
+        tasks = []
+        for idx in range(num_alternatives):
+            alt_prompt = (
+                f"Alternative #{idx + 1} for '{prompt}' based on '{current_best}'."
+            )
+            messages = self.conversation_history + [
+                {"role": "user", "content": alt_prompt}
+            ]
+            tasks.append(self._async_call_api(messages, temperature=0.7, stream=False))
+
+        alternatives = await asyncio.gather(*tasks)
+        return list(alternatives)
 
 
 def main():
