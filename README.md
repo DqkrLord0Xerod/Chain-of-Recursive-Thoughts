@@ -83,7 +83,17 @@ The magic is in:
 
 
 ### Contributing
+
 Found a way to make it even better? PR's welcome!
+
+### Running tests
+Install the requirements and execute pytest:
+```bash
+pip install -r requirements.txt
+pip install pytest flake8
+pytest
+```
+
 
 ### License
 MIT - Go wild with it
