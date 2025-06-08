@@ -58,3 +58,54 @@ def test_cache_disabled(monkeypatch):
     chat._call_api(messages, stream=True)
     chat._call_api(messages, stream=True)
     assert len(calls) == 2
+
+
+def test_disk_cache_persist(tmp_path, monkeypatch):
+    path = tmp_path / "cache.pkl"
+    chat = EnhancedRecursiveThinkingChat(
+        api_key="x", disk_cache_path=str(path)
+    )
+
+    monkeypatch.setattr(requests, "post", lambda *a, **k: make_response("hi"))
+
+    messages = [{"role": "user", "content": "hi"}]
+    assert chat._call_api(messages, stream=True) == "hi"
+
+    calls = []
+
+    def fake_post(*a, **k):
+        calls.append(1)
+        return make_response("new")
+
+    monkeypatch.setattr(requests, "post", fake_post)
+    chat2 = EnhancedRecursiveThinkingChat(api_key="x", disk_cache_path=str(path))
+
+    assert chat2._call_api(messages, stream=True) == "hi"
+    assert not calls
+
+
+def test_disk_cache_limit(tmp_path, monkeypatch):
+    path = tmp_path / "cache.pkl"
+    chat = EnhancedRecursiveThinkingChat(
+        api_key="x", disk_cache_path=str(path), disk_cache_size=1
+    )
+
+    monkeypatch.setattr(requests, "post", lambda *a, **k: make_response("a"))
+    chat._call_api([{"role": "user", "content": "a"}], stream=True)
+
+    monkeypatch.setattr(requests, "post", lambda *a, **k: make_response("b"))
+    chat._call_api([{"role": "user", "content": "b"}], stream=True)
+
+    calls = []
+
+    def fake_post(*a, **k):
+        calls.append(1)
+        return make_response("a2")
+
+    monkeypatch.setattr(requests, "post", fake_post)
+    chat2 = EnhancedRecursiveThinkingChat(
+        api_key="x", disk_cache_path=str(path), disk_cache_size=1
+    )
+
+    chat2._call_api([{"role": "user", "content": "a"}], stream=True)
+    assert calls == [1]

@@ -6,6 +6,7 @@ import math
 import re
 from collections import OrderedDict
 from typing import List, Dict
+import pickle
 from datetime import datetime
 import requests
 import tiktoken
@@ -27,6 +28,8 @@ class EnhancedRecursiveThinkingChat:
         caching_enabled: bool = True,
         cache_size: int = 128,
         max_retries: int = 3,
+        disk_cache_path: str | None = None,
+        disk_cache_size: int = 256,
     ) -> None:
         """Initialize with OpenRouter API.
 
@@ -53,6 +56,11 @@ class EnhancedRecursiveThinkingChat:
         self.caching_enabled = caching_enabled
         self.cache_size = cache_size
         self.cache: OrderedDict[tuple[str, str], str] = OrderedDict()
+        self.disk_cache_path = disk_cache_path
+        self.disk_cache_size = disk_cache_size
+        self.disk_cache: OrderedDict[tuple[str, str], str] = OrderedDict()
+        if self.disk_cache_path:
+            self._load_disk_cache()
         self.max_retries = max_retries
         try:
             self.tokenizer = tiktoken.get_encoding("cl100k_base")
@@ -78,6 +86,32 @@ class EnhancedRecursiveThinkingChat:
                 break
             self.conversation_history.pop(0)
 
+    def _load_disk_cache(self) -> None:
+        """Load persistent cache entries from disk."""
+        if not self.disk_cache_path or not os.path.exists(self.disk_cache_path):
+            return
+        try:
+            with open(self.disk_cache_path, "rb") as f:
+                data = pickle.load(f)
+            if isinstance(data, dict):
+                self.disk_cache = OrderedDict(data)
+                while len(self.disk_cache) > self.disk_cache_size:
+                    self.disk_cache.popitem(last=False)
+                for k in list(self.disk_cache)[-self.cache_size:]:
+                    self.cache[k] = self.disk_cache[k]
+        except Exception as e:  # pragma: no cover - logging not tested
+            logger.warning("Failed to load disk cache: %s", e)
+
+    def _save_disk_cache(self) -> None:
+        """Persist cache entries to disk."""
+        if not self.disk_cache_path:
+            return
+        try:
+            with open(self.disk_cache_path, "wb") as f:
+                pickle.dump(self.disk_cache, f)
+        except Exception as e:  # pragma: no cover - logging not tested
+            logger.warning("Failed to save disk cache: %s", e)
+
     def _cache_key(self, messages: List[Dict]) -> tuple[str, str]:
         """Return a cache key based on prompt and context hash."""
         if not messages:
@@ -95,13 +129,22 @@ class EnhancedRecursiveThinkingChat:
     ) -> str:
         """Make an API call to OpenRouter with optional caching."""
         cache_key = self._cache_key(messages)
-        if self.caching_enabled and cache_key in self.cache:
-            cached = self.cache[cache_key]
-            if stream:
-                print(cached)
-            # Move key to end to mark as recently used
-            self.cache.move_to_end(cache_key)
-            return cached
+        if self.caching_enabled:
+            if cache_key in self.cache:
+                cached = self.cache[cache_key]
+                if stream:
+                    print(cached)
+                self.cache.move_to_end(cache_key)
+                return cached
+            if self.disk_cache_path and cache_key in self.disk_cache:
+                cached = self.disk_cache[cache_key]
+                if stream:
+                    print(cached)
+                self.cache[cache_key] = cached
+                self.cache.move_to_end(cache_key)
+                if len(self.cache) > self.cache_size:
+                    self.cache.popitem(last=False)
+                return cached
         payload = {
             "model": self.model,
             "messages": messages,
@@ -155,8 +198,15 @@ class EnhancedRecursiveThinkingChat:
                     )
                 if self.caching_enabled:
                     self.cache[cache_key] = result
+                    self.cache.move_to_end(cache_key)
                     if len(self.cache) > self.cache_size:
                         self.cache.popitem(last=False)
+                    if self.disk_cache_path:
+                        self.disk_cache[cache_key] = result
+                        self.disk_cache.move_to_end(cache_key)
+                        while len(self.disk_cache) > self.disk_cache_size:
+                            self.disk_cache.popitem(last=False)
+                        self._save_disk_cache()
                 return result
             except Exception as e:  # pragma: no cover - logging not tested
                 logger.warning(
