@@ -22,7 +22,7 @@ import tiktoken
 from tiktoken import _educational
 
 from api import openrouter
-from config.settings import settings
+from config import settings
 from core.context import ContextManager
 from core.recursion import ConvergenceTracker, QualityAssessor
 from exceptions import APIError, RateLimitError, TokenLimitError
@@ -68,7 +68,7 @@ class EnhancedRecursiveThinkingChat:
         self.max_context_tokens = config.max_context_tokens
         self.headers = {
             "Authorization": f"Bearer {self.api_key}",
-            "HTTP-Referer": "http://localhost:3000",
+            "HTTP-Referer": settings.frontend_url,
             "X-Title": "Recursive Thinking Chat",
             "Content-Type": "application/json",
         }

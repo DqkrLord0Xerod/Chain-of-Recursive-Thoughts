@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from core.chat import CoRTConfig, AsyncEnhancedRecursiveThinkingChat
-from config.settings import settings
+from config import settings
 
 
 async def main() -> None:

@@ -1,7 +1,7 @@
 from fastapi import FastAPI, WebSocket, HTTPException, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from config.settings import settings
+from config import settings
 import uvicorn
 import json
 import os
@@ -218,7 +218,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
 # Serve the React app
 @app.get("/")
 async def root():
-    return {"message": "RecThink API is running. Frontend available at http://localhost:3000"}
+    return {"message": f"RecThink API is running. Frontend available at {settings.frontend_url}"}
 
 if __name__ == "__main__":
     uvicorn.run("recthink_web:app", host="0.0.0.0", port=8000, reload=True)

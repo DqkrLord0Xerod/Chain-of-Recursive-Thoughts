@@ -5,9 +5,10 @@ import aiohttp
 from typing import Optional
 
 from exceptions import APIError, RateLimitError, TokenLimitError
+from config import settings
 
-BASE_URL = "https://openrouter.ai/api/v1/chat/completions"
-EMBED_URL = "https://openrouter.ai/api/v1/embeddings"
+BASE_URL = settings.api_base_url
+EMBED_URL = settings.embed_url
 
 
 def _handle_response(response):
