@@ -1,0 +1,332 @@
+# Migration Guide: CoRT v1 to v2 Architecture
+
+This guide helps you migrate from the monolithic v1 architecture to the modular v2 architecture.
+
+## Overview of Changes
+
+### Architecture Changes
+- **Monolithic Class** → **Dependency Injection with Interfaces**
+- **Basic Retry** → **Circuit Breaker + Hedging + Retry Policies**
+- **Simple Logging** → **OpenTelemetry + Prometheus Metrics**
+- **Sequential Processing** → **Parallel Thinking Optimization**
+- **Basic Security** → **Comprehensive Security Layer**
+
+## Migration Steps
+
+### Step 1: Install New Dependencies
+
+```bash
+# Backup existing environment
+pip freeze > requirements-old.txt
+
+# Install new dependencies
+pip install -r requirements-prod.txt
+```
+
+### Step 2: Update Configuration
+
+Create new configuration files:
+
+```bash
+# Copy example configuration
+cp .env.example .env
+
+# Edit with your settings
+nano .env
+```
+
+Required environment variables:
+```env
+# Application
+APP_ENV=production
+APP_NAME=CoRT
+APP_VERSION=2.0.0
+
+# Security (generate new keys!)
+API_KEY_MASTER_KEY=<base64-encoded-32-char-key>
+SESSION_SECRET_KEY=<base64-encoded-32-char-key>
+
+# LLM Providers
+LLM_PRIMARY_MODEL=gpt-4
+LLM_PRIMARY_API_KEY=<your-openai-key>
+
+# Optional: Fallback providers
+LLM_FALLBACK_MODELS=["claude-3-opus-20240229"]
+LLM_FALLBACK_API_KEYS=["<your-anthropic-key>"]
+
+# Database (optional)
+DATABASE_URL=postgresql://user:pass@localhost/cort
+REDIS_URL=redis://localhost:6379/0
+
+# Monitoring (optional)
+PROMETHEUS_PORT=9090
+JAEGER_ENDPOINT=localhost:6831
+```
+
+### Step 3: Code Migration
+
+#### Updating Imports
+
+**Old (v1):**
+```python
+from core.chat import EnhancedRecursiveThinkingChat, CoRTConfig
+
+chat = EnhancedRecursiveThinkingChat(
+    CoRTConfig(api_key="key", model="model")
+)
+```
+
+**New (v2):**
+```python
+from config import get_production_config
+from core.chat_v2 import RecursiveThinkingEngine
+from recthink_web_v2 import create_thinking_engine
+
+# Configuration is now centralized
+config = get_production_config()
+
+# Engine creation is async and uses factory
+engine = await create_thinking_engine()
+```
+
+#### API Updates
+
+**Old API Call:**
+```python
+result = chat.think_and_respond(
+    user_input="What is the weather?",
+    verbose=True,
+    thinking_rounds=3,
+)
+
+print(result.response)
+```
+
+**New API Call:**
+```python
+result = await engine.think(
+    prompt="What is the weather?",
+    context=None,  # Optional conversation context
+    max_thinking_time=30.0,
+    target_quality=0.9,
+)
+
+print(result["response"])
+print(f"Quality: {result['final_quality']}")
+print(f"Improvement: {result['improvement']}")
+```
+
+#### Web API Updates
+
+**Old Endpoint:**
+```bash
+POST /api/send_message
+{
+    "session_id": "session_123",
+    "message": "Hello",
+    "thinking_rounds": 3
+}
+```
+
+**New Endpoint:**
+```bash
+POST /api/v1/chat
+Authorization: Bearer <api-key>
+{
+    "prompt": "Hello",
+    "context": [],  # Optional
+    "thinking_rounds": null,  # Auto-determined
+    "temperature": 0.7,
+    "enable_streaming": false
+}
+```
+
+### Step 4: Database Migration (Optional)
+
+If using database for persistence:
+
+```bash
+# Initialize database
+alembic init alembic
+alembic revision --autogenerate -m "Initial migration"
+alembic upgrade head
+```
+
+### Step 5: Update Deployment
+
+#### Docker Deployment
+
+**Build new image:**
+```bash
+docker build -f deploy/Dockerfile -t cort:v2 .
+```
+
+**Update docker-compose.yml:**
+```yaml
+version: '3.8'
+
+services:
+  cort-api:
+    image: cort:v2
+    env_file: .env
+    ports:
+      - "8000:8000"
+      - "9090:9090"  # Prometheus metrics
+    volumes:
+      - cache_data:/var/cache/cort
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  redis:  # Optional
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  prometheus:  # Optional
+    image: prom/prometheus
+    ports:
+      - "9091:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+
+volumes:
+  cache_data:
+```
+
+#### Kubernetes Deployment
+
+```bash
+# Apply new configuration
+kubectl apply -f deploy/kubernetes/
+
+# Check deployment
+kubectl get pods -n cort
+kubectl logs -n cort -l app=cort
+```
+
+### Step 6: Testing the Migration
+
+Run the test suite:
+```bash
+# Unit tests
+pytest tests/
+
+# Integration tests
+pytest tests/test_integration.py
+
+# Load tests
+locust -f tests/load_test.py
+```
+
+### Step 7: Monitoring Setup
+
+1. **Prometheus**: Access metrics at `http://localhost:9090/metrics`
+2. **Grafana**: Import dashboard from `monitoring/dashboards/cort_dashboard.json`
+3. **Logs**: Use structured logging with proper log aggregation
+
+## Rollback Plan
+
+If issues arise:
+
+1. **Quick Rollback:**
+   ```bash
+   # Revert to old image
+   docker-compose down
+   docker-compose up -d cort:v1
+   ```
+
+2. **Data Preservation:**
+   - Cache data is backward compatible
+   - API keys remain valid
+   - Session data may need migration
+
+## Common Issues and Solutions
+
+### Issue: "Module not found" errors
+**Solution:** Ensure all new dependencies are installed:
+```bash
+pip install -r requirements-prod.txt --force-reinstall
+```
+
+### Issue: API key validation fails
+**Solution:** Generate new API keys with v2 system:
+```python
+from core.security.api_security import APIKeyManager
+
+manager = APIKeyManager()
+key_info = manager.create_api_key(
+    name="migration-key",
+    scopes=["read", "write"],
+)
+print(f"New API key: {key_info['api_key']}")
+```
+
+### Issue: Performance degradation
+**Solution:** Enable performance optimizations:
+```env
+ENABLE_PARALLEL_THINKING=true
+ENABLE_ADAPTIVE_OPTIMIZATION=true
+ENABLE_PROMPT_COMPRESSION=true
+```
+
+## Gradual Migration Strategy
+
+For large deployments, consider gradual migration:
+
+1. **Phase 1**: Deploy v2 alongside v1
+2. **Phase 2**: Route 10% traffic to v2
+3. **Phase 3**: Monitor metrics, increase to 50%
+4. **Phase 4**: Full migration after validation
+
+```nginx
+# Nginx configuration for gradual rollout
+upstream backend {
+    server v1-api:8000 weight=90;
+    server v2-api:8000 weight=10;
+}
+```
+
+## API Compatibility Layer
+
+For backward compatibility, create adapter:
+
+```python
+# adapters/v1_compatibility.py
+class V1CompatibilityAdapter:
+    """Adapter to maintain v1 API compatibility."""
+    
+    def __init__(self, v2_engine):
+        self.engine = v2_engine
+        
+    async def think_and_respond(self, user_input, **kwargs):
+        """V1-compatible method."""
+        result = await self.engine.think(
+            prompt=user_input,
+            max_thinking_time=30.0,
+        )
+        
+        # Convert to v1 format
+        from types import SimpleNamespace
+        return SimpleNamespace(
+            response=result["response"],
+            thinking_rounds=result["thinking_rounds"],
+            thinking_history=[],  # Would need conversion
+        )
+```
+
+## Support
+
+For migration support:
+- Documentation: `/docs/`
+- Issues: GitHub Issues
+- Monitoring: Check Grafana dashboards
+- Logs: Review structured logs for errors
+
+Remember to:
+- ✅ Backup data before migration
+- ✅ Test in staging environment first
+- ✅ Monitor metrics after deployment
+- ✅ Keep rollback plan ready

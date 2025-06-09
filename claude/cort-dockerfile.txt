@@ -1,0 +1,87 @@
+# Multi-stage build for production CoRT deployment
+
+# Stage 1: Python dependencies
+FROM python:3.11-slim as python-deps
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    gcc \
+    g++ \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Python dependencies
+WORKDIR /deps
+COPY requirements.txt requirements-prod.txt ./
+RUN pip install --upgrade pip \
+    && pip install --no-cache-dir -r requirements-prod.txt
+
+# Stage 2: Frontend build
+FROM node:18-alpine as frontend-build
+
+WORKDIR /frontend
+COPY frontend/package*.json ./
+RUN npm ci --only=production
+
+COPY frontend/ ./
+RUN npm run build
+
+# Stage 3: Final production image
+FROM python:3.11-slim
+
+# Security: Run as non-root user
+RUN groupadd -r cort && useradd -r -g cort cort
+
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy Python dependencies
+COPY --from=python-deps /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
+COPY --from=python-deps /usr/local/bin /usr/local/bin
+
+# Copy application code
+WORKDIR /app
+COPY . .
+
+# Copy frontend build
+COPY --from=frontend-build /frontend/build ./frontend/build
+
+# Create necessary directories
+RUN mkdir -p /var/log/cort /var/cache/cort /data \
+    && chown -R cort:cort /app /var/log/cort /var/cache/cort /data
+
+# Security hardening
+RUN chmod -R 750 /app \
+    && find /app -name "*.py" -exec chmod 640 {} \; \
+    && find /app -name "*.sh" -exec chmod 750 {} \;
+
+# Switch to non-root user
+USER cort
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+# Expose ports
+EXPOSE 8000 9090
+
+# Environment variables
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    APP_ENV=production \
+    LOG_LEVEL=INFO
+
+# Start script
+COPY deploy/docker-entrypoint.sh /docker-entrypoint.sh
+ENTRYPOINT ["/docker-entrypoint.sh"]
+
+# Default command
+CMD ["gunicorn", "recthink_web:app", \
+     "--worker-class", "uvicorn.workers.UvicornWorker", \
+     "--workers", "4", \
+     "--bind", "0.0.0.0:8000", \
+     "--timeout", "60", \
+     "--access-logfile", "-", \
+     "--error-logfile", "-", \
+     "--log-level", "info"]

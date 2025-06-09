@@ -1,0 +1,338 @@
+---
+# Namespace
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cort
+  labels:
+    app: cort
+
+---
+# ConfigMap for non-sensitive configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cort-config
+  namespace: cort
+data:
+  APP_NAME: "CoRT"
+  APP_ENV: "production"
+  LOG_LEVEL: "INFO"
+  API_BASE_PATH: "/api/v1"
+  PROMETHEUS_PORT: "9090"
+  CACHE_BACKEND: "hybrid"
+  DISK_CACHE_PATH: "/var/cache/cort"
+
+---
+# Secret for sensitive data
+apiVersion: v1
+kind: Secret
+metadata:
+  name: cort-secrets
+  namespace: cort
+type: Opaque
+stringData:
+  API_KEY_MASTER_KEY: "your-base64-encoded-master-key-here"
+  SESSION_SECRET_KEY: "your-session-secret-key-here"
+  LLM_PRIMARY_API_KEY: "your-llm-api-key-here"
+  DATABASE_URL: "postgresql://user:pass@postgres:5432/cort"
+  REDIS_URL: "redis://redis:6379/0"
+
+---
+# PersistentVolumeClaim for cache storage
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: cort-cache-pvc
+  namespace: cort
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: fast-ssd
+
+---
+# Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cort-api
+  namespace: cort
+  labels:
+    app: cort
+    component: api
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: cort
+      component: api
+  template:
+    metadata:
+      labels:
+        app: cort
+        component: api
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+        prometheus.io/path: "/metrics"
+    spec:
+      # Security context
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      
+      # Anti-affinity for HA
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - cort
+              topologyKey: kubernetes.io/hostname
+      
+      containers:
+      - name: cort
+        image: your-registry/cort:latest
+        imagePullPolicy: Always
+        
+        # Security
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+        
+        # Resource limits
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "2000m"
+        
+        # Ports
+        ports:
+        - name: http
+          containerPort: 8000
+          protocol: TCP
+        - name: metrics
+          containerPort: 9090
+          protocol: TCP
+        
+        # Environment variables
+        envFrom:
+        - configMapRef:
+            name: cort-config
+        - secretRef:
+            name: cort-secrets
+        
+        env:
+        - name: FRONTEND_URL
+          value: "https://cort.example.com"
+        - name: WORKER_COUNT
+          value: "4"
+        
+        # Volume mounts
+        volumeMounts:
+        - name: cache-volume
+          mountPath: /var/cache/cort
+        - name: tmp-volume
+          mountPath: /tmp
+        - name: log-volume
+          mountPath: /var/log/cort
+        
+        # Probes
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: http
+            httpHeaders:
+            - name: User-Agent
+              value: Kubernetes-Health-Check
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: http
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        
+        # Startup probe for slow starts
+        startupProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 0
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 30
+      
+      # Init container for migrations
+      initContainers:
+      - name: migrations
+        image: your-registry/cort:latest
+        command: ["python", "manage.py", "migrate"]
+        envFrom:
+        - configMapRef:
+            name: cort-config
+        - secretRef:
+            name: cort-secrets
+      
+      # Volumes
+      volumes:
+      - name: cache-volume
+        persistentVolumeClaim:
+          claimName: cort-cache-pvc
+      - name: tmp-volume
+        emptyDir: {}
+      - name: log-volume
+        emptyDir: {}
+
+---
+# Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: cort-api
+  namespace: cort
+  labels:
+    app: cort
+    component: api
+spec:
+  type: ClusterIP
+  ports:
+  - port: 80
+    targetPort: http
+    protocol: TCP
+    name: http
+  - port: 9090
+    targetPort: metrics
+    protocol: TCP
+    name: metrics
+  selector:
+    app: cort
+    component: api
+
+---
+# HorizontalPodAutoscaler
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: cort-api-hpa
+  namespace: cort
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: cort-api
+  minReplicas: 3
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+      - type: Percent
+        value: 10
+        periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+      - type: Percent
+        value: 100
+        periodSeconds: 30
+      - type: Pods
+        value: 2
+        periodSeconds: 60
+
+---
+# NetworkPolicy for security
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: cort-api-netpol
+  namespace: cort
+spec:
+  podSelector:
+    matchLabels:
+      app: cort
+      component: api
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: ingress-nginx
+    - podSelector:
+        matchLabels:
+          app: prometheus
+    ports:
+    - protocol: TCP
+      port: 8000
+    - protocol: TCP
+      port: 9090
+  egress:
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: cort
+    ports:
+    - protocol: TCP
+      port: 5432  # PostgreSQL
+    - protocol: TCP
+      port: 6379  # Redis
+  - to:
+    - namespaceSelector: {}
+    ports:
+    - protocol: TCP
+      port: 443  # HTTPS for external APIs
+    - protocol: TCP
+      port: 53   # DNS
+    - protocol: UDP
+      port: 53   # DNS
+
+---
+# PodDisruptionBudget for availability
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: cort-api-pdb
+  namespace: cort
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: cort
+      component: api
