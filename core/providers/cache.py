@@ -10,7 +10,7 @@ import time
 from collections import OrderedDict
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, Optional, Protocol, Union
+from typing import Any, Dict, List, Optional, Protocol, Union
 
 import aiofiles
 import structlog
