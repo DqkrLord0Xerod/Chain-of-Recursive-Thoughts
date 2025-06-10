@@ -10,3 +10,7 @@ openai
 tiktoken
 structlog
 aiohttp
+
+opentelemetry-sdk
+opentelemetry-exporter-prometheus
+aiofiles
