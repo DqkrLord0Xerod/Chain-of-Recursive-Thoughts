@@ -9,7 +9,7 @@ from .retry_policies import (
     HedgingExecutor,
     CombinedExecutor,
 )
-from ..resilience import RetryState, with_retry
+from .resilience import RetryState, with_retry
 
 __all__ = [
     "ExponentialBackoffPolicy",
