@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import hashlib
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 import numpy as np
 from api import openrouter
