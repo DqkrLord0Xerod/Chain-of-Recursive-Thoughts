@@ -5,6 +5,13 @@ from config import settings
 
 
 async def main() -> None:
+    """Run the recursive thinking chat CLI.
+
+    Commands:
+        exit      Quit the program.
+        save      Save the conversation history.
+        save full Save the entire thinking log.
+    """
     print("🤖 Enhanced Recursive Thinking Chat")
     print("=" * 50)
 
