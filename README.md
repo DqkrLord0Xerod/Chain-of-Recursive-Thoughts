@@ -13,7 +13,8 @@
 ## How to use the Web UI(still early dev)
 1. Open start_recthink.bat
 2. wait for a bit as it installs dependencies
-3. profit??
+3. If new packages are added, rerun `pip install -r requirements.txt`
+4. profit??
 
 If running on Linux:
 ```
@@ -62,7 +63,15 @@ Install the requirements and execute pytest:
 ```bash
 pip install -r requirements.txt
 pip install pytest flake8
+flake8
 pytest
+```
+
+If you add new packages to `requirements.txt`, run the full installation step
+again:
+
+```bash
+pip install -r requirements.txt
 ```
 
 To run only the integration scenarios:
