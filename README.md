@@ -15,12 +15,12 @@
 2. wait for a bit as it installs dependencies
 3. profit??
 
-If running on linux:
+If running on Linux:
 ```
 pip install -r requirements.txt
 cd frontend && npm install
 cd ..
-python ./recthink_web.py
+python recthink_web.py  # start the API server
 ```
 
 (open a new shell)
@@ -31,7 +31,8 @@ npm start
 ```
 
 ## Try it yourself
-```python
+### CLI usage
+```bash
 pip install -r requirements.txt
 # Option 1: export your API key
 export OPENROUTER_API_KEY="your-key-here"
@@ -42,7 +43,7 @@ export APP_ENV=development
 # Optional overrides
 # API_BASE_URL=https://api.example.com
 # WS_BASE_URL=wss://api.example.com
-python recursive-thinking-ai.py
+python -m cli.main
 ```
 You can also limit the context window by setting `max_context_tokens` in a
 `CoRTConfig` instance when creating `EnhancedRecursiveThinkingChat`.

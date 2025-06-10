@@ -26,7 +26,7 @@
   ```
 - Command line usage:
   ```bash
-  python recursive-thinking-ai.py
+  python -m cli.main
   ```
 - Web application:
   ```bash
