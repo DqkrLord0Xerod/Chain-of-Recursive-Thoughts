@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 
 from .settings import Settings
+from .production import ProductionSettings, load_production_config
 
 
 class Development(Settings):
@@ -51,7 +52,8 @@ __all__ = [
     "Development",
     "Staging",
     "Production",
+    "ProductionSettings",
+    "load_production_config",
     "settings",
     "get_settings",
 ]
-
