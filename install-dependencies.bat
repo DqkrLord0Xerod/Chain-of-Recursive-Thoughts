@@ -10,4 +10,5 @@ pip install -r requirements.txt --no-cache-dir --force-reinstall
 echo.
 echo [2/2] Installing Frontend dependencies...
 cd frontend
-call
+npm install
+cd ..
