@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import time
 from dataclasses import dataclass
-from typing import AsyncIterator, Callable, Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import structlog
 
@@ -96,7 +96,6 @@ class ParallelThinkingOptimizer:
         best_score = initial_score
         
         for round_num in range(max_rounds):
-            round_start = time.time()
             temperature = temperature_schedule[min(round_num, len(temperature_schedule) - 1)]
             
             logger.info(
