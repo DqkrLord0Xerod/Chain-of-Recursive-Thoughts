@@ -6,7 +6,7 @@ import asyncio
 import time
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Callable, Dict, Optional, TypeVar, Generic
+from typing import Callable, Dict, Optional, TypeVar, Generic, List
 
 import structlog
 
@@ -152,8 +152,8 @@ class CircuitBreaker(Generic[T]):
             
         # Acquire semaphore for half-open state
         semaphore = (
-            self._half_open_semaphore 
-            if self._state == CircuitState.HALF_OPEN 
+            self._half_open_semaphore
+            if self._state == CircuitState.HALF_OPEN
             else None
         )
         

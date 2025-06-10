@@ -1,9 +1,9 @@
 """Comprehensive security tests."""
 
-import asyncio
 import time
 from datetime import datetime, timedelta
-from unittest.mock import Mock, patch
+from unittest.mock import patch
+import os
 
 import pytest
 
@@ -18,7 +18,7 @@ from core.security.api_security import (
     ValidationError,
     RateLimitError,
 )
-from config.production import load_production_config, ProductionSettings
+from config.production import load_production_config
 
 
 class TestAPIKeyManager:

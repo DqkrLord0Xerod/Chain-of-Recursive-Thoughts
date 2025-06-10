@@ -2,22 +2,21 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 import time
 from contextlib import asynccontextmanager
-from typing import Dict, Optional
+from typing import Dict, Optional, List
 
 from fastapi import FastAPI, HTTPException, Depends, Header, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, Response
 from pydantic import BaseModel
 import structlog
 import uvicorn
 
 # New architecture imports
 from config import get_production_config
-from core.providers.llm import OpenRouterLLMProvider, MultiProviderLLM
+from core.providers.llm import OpenRouterLLMProvider
 from core.providers.cache import HybridCacheProvider, InMemoryLRUCache, DiskCacheProvider
 from core.providers.resilient_llm import ResilientLLMProvider
 from core.providers.embeddings import EmbeddingProvider
@@ -36,7 +35,6 @@ from monitoring.telemetry import (
     initialize_telemetry,
     trace_method,
     get_metrics,
-    TelemetryMixin,
 )
 from monitoring.metrics_v2 import MetricsAnalyzer
 
@@ -85,7 +83,7 @@ async def get_security_validator(
     api_key = None
     if authorization and authorization.startswith("Bearer "):
         api_key = authorization[7:]
-        
+
     return {
         "api_key": api_key,
         "session_id": x_session_id,
@@ -105,10 +103,10 @@ async def get_thinking_engine() -> RecursiveThinkingEngine:
 async def lifespan(app: FastAPI):
     """Application lifecycle management."""
     logger.info("starting_application")
-    
+
     # Load configuration
     config = get_production_config()
-    
+
     # Initialize telemetry
     if config.monitoring.metrics_enabled:
         initialize_telemetry(
@@ -118,7 +116,7 @@ async def lifespan(app: FastAPI):
             prometheus_port=config.monitoring.prometheus_port,
             jaeger_endpoint=config.monitoring.jaeger_endpoint,
         )
-    
+
     # Initialize security
     global security_middleware
     security_config = SecurityConfig(
@@ -128,34 +126,34 @@ async def lifespan(app: FastAPI):
         config.security.api_key_master_key.get_secret_value()
     )
     security_middleware = SecurityMiddleware(security_config, api_key_manager)
-    
+
     # Initialize metrics analyzer
     global metrics_analyzer
     metrics_analyzer = MetricsAnalyzer()
-    
+
     # Create default engine
     engine_pool["default"] = await create_thinking_engine()
-    
+
     logger.info("application_started", config=config.app_name)
-    
+
     yield
-    
+
     # Cleanup
     logger.info("shutting_down_application")
     for engine in engine_pool.values():
         if hasattr(engine, 'cleanup'):
             await engine.cleanup()
-    
+
     logger.info("application_stopped")
 
 
 async def create_thinking_engine() -> RecursiveThinkingEngine:
     """Create a new thinking engine with production configuration."""
     config = get_production_config()
-    
+
     # Create LLM providers
     providers = []
-    
+
     # Primary provider
     primary = OpenRouterLLMProvider(
         api_key=config.llm.primary_api_key.get_secret_value(),
@@ -164,7 +162,7 @@ async def create_thinking_engine() -> RecursiveThinkingEngine:
         timeout=config.llm.timeout,
     )
     providers.append(primary)
-    
+
     # Fallback providers
     for i, (model, api_key) in enumerate(
         zip(config.llm.fallback_models, config.llm.fallback_api_keys)
@@ -174,7 +172,7 @@ async def create_thinking_engine() -> RecursiveThinkingEngine:
             model=model,
         )
         providers.append(fallback)
-    
+
     # Wrap with resilience
     resilient_llm = ResilientLLMProvider(
         providers,
@@ -182,12 +180,12 @@ async def create_thinking_engine() -> RecursiveThinkingEngine:
         hedge_delay=config.llm.hedge_delay,
         max_hedges=config.llm.max_hedges,
     )
-    
+
     # Create cache
     memory_cache = InMemoryLRUCache(
         max_size=config.cache.memory_cache_size
     )
-    
+
     if config.cache.disk_cache_enabled:
         disk_cache = DiskCacheProvider(
             cache_dir=config.cache.disk_cache_path,
@@ -197,11 +195,11 @@ async def create_thinking_engine() -> RecursiveThinkingEngine:
         cache = HybridCacheProvider(memory_cache, disk_cache)
     else:
         cache = memory_cache
-    
+
     # Create evaluator
     embedding_provider = EmbeddingProvider()  # Would need implementation
     evaluator = EnhancedQualityEvaluator(embedding_provider)
-    
+
     # Create context manager
     import tiktoken
     tokenizer = tiktoken.get_encoding("cl100k_base")
@@ -209,14 +207,14 @@ async def create_thinking_engine() -> RecursiveThinkingEngine:
         max_tokens=config.performance.max_thinking_rounds * 1000,
         tokenizer=tokenizer,
     )
-    
+
     # Create thinking strategy
     strategy = AdaptiveThinkingStrategy(
         resilient_llm,
         max_rounds=config.performance.max_thinking_rounds,
         quality_threshold=config.performance.quality_threshold,
     )
-    
+
     # Create engine
     engine = RecursiveThinkingEngine(
         llm=resilient_llm,
@@ -226,7 +224,7 @@ async def create_thinking_engine() -> RecursiveThinkingEngine:
         thinking_strategy=strategy,
         metrics_recorder=get_metrics() if config.monitoring.metrics_enabled else None,
     )
-    
+
     return engine
 
 
@@ -255,7 +253,7 @@ async def chat(
     engine: RecursiveThinkingEngine = Depends(get_thinking_engine),
 ) -> ChatResponse:
     """Process chat request with recursive thinking."""
-    
+
     try:
         # Validate request
         validation_result = await security_middleware.validate_request(
@@ -264,10 +262,10 @@ async def chat(
             prompt=request.prompt,
             context=request.context,
         )
-        
+
         # Record request
         start_time = time.time()
-        
+
         # Execute thinking
         result = await engine.think(
             prompt=request.prompt,
@@ -275,11 +273,11 @@ async def chat(
             max_thinking_time=30.0,
             target_quality=0.9,
         )
-        
+
         # Record metrics
         if metrics_analyzer:
             from monitoring.metrics_v2 import ThinkingMetrics
-            
+
             metrics = ThinkingMetrics(
                 session_id=security.get("session_id", "anonymous"),
                 start_time=start_time,
@@ -289,13 +287,13 @@ async def chat(
                 quality_scores=[result["initial_quality"], result["final_quality"]],
                 token_usage_per_round=[],  # Would need to track this
             )
-            
+
             analysis = metrics_analyzer.record_session(metrics)
-            
+
             # Log any anomalies
             if analysis["anomalies"]:
                 logger.warning("thinking_anomalies", anomalies=analysis["anomalies"])
-        
+
         return ChatResponse(
             response=result["response"],
             thinking_rounds=result["thinking_rounds"],
@@ -308,7 +306,7 @@ async def chat(
                 "rate_limit_remaining": validation_result.get("rate_limit_remaining"),
             },
         )
-        
+
     except ValidationError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except RateLimitError as e:
@@ -328,7 +326,7 @@ async def chat_stream(
     engine: RecursiveThinkingEngine = Depends(get_thinking_engine),
 ):
     """Stream chat responses with thinking progress."""
-    
+
     try:
         # Validate request
         await security_middleware.validate_request(
@@ -337,7 +335,7 @@ async def chat_stream(
             prompt=request.prompt,
             context=request.context,
         )
-        
+
         async def generate():
             """Generate streaming response."""
             async for update in engine.think_stream(
@@ -345,14 +343,14 @@ async def chat_stream(
                 context=request.context,
             ):
                 yield f"data: {json.dumps(update)}\n\n"
-                
+
             yield "data: [DONE]\n\n"
-            
+
         return StreamingResponse(
             generate(),
             media_type="text/event-stream",
         )
-        
+
     except Exception as e:
         logger.error("stream_error", error=str(e))
         raise HTTPException(status_code=500, detail=str(e))
@@ -362,10 +360,10 @@ async def chat_stream(
 async def health_check():
     """Health check endpoint."""
     config = get_production_config()
-    
+
     # Check services
     services = {}
-    
+
     # Check LLM providers
     if "default" in engine_pool:
         engine = engine_pool["default"]
@@ -373,7 +371,7 @@ async def health_check():
             services["llm"] = await engine.llm.health_check()
         else:
             services["llm"] = {"status": "unknown"}
-    
+
     # Check cache
     if "default" in engine_pool:
         engine = engine_pool["default"]
@@ -382,14 +380,14 @@ async def health_check():
             "status": "healthy",
             "stats": cache_stats,
         }
-    
+
     # Check metrics
     if metrics_analyzer:
         services["metrics"] = {
             "status": "healthy",
             "summary": metrics_analyzer.get_summary_stats(),
         }
-    
+
     return HealthResponse(
         status="healthy",
         version=config.app_version,
@@ -414,21 +412,21 @@ async def get_stats(
     security: Dict = Depends(get_security_validator),
 ):
     """Get system statistics."""
-    
+
     # Require API key for stats
     if not security.get("api_key"):
         raise HTTPException(status_code=403, detail="API key required")
-    
+
     stats = {
         "engines": len(engine_pool),
         "metrics": metrics_analyzer.get_summary_stats() if metrics_analyzer else {},
         "recommendations": metrics_analyzer.get_recommendations() if metrics_analyzer else [],
     }
-    
+
     # Add provider stats
     if "default" in engine_pool and hasattr(engine_pool["default"].llm, 'get_metrics'):
         stats["providers"] = engine_pool["default"].llm.get_metrics()
-    
+
     return stats
 
 
@@ -438,7 +436,7 @@ async def validation_error_handler(request: Request, exc: ValidationError):
     return {"error": "validation_error", "detail": str(exc)}, 400
 
 
-@app.exception_handler(RateLimitError)  
+@app.exception_handler(RateLimitError)
 async def rate_limit_error_handler(request: Request, exc: RateLimitError):
     return {"error": "rate_limit", "detail": str(exc)}, 429
 
