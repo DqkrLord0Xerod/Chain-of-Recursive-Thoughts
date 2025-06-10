@@ -2,7 +2,7 @@
 
 import asyncio
 import time
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -56,7 +56,7 @@ class TestTelemetry:
         initialize_telemetry(enable_prometheus=False)
         
         with pytest.raises(ValueError):
-            with trace_span("test_span") as span:
+            with trace_span("test_span"):
                 raise ValueError("Test error")
                 
     @pytest.mark.asyncio
@@ -350,3 +350,7 @@ class TestMetricsAnalyzer:
         # Check specific recommendations
         perf_recs = [r for r in recommendations if r["type"] == "performance"]
         assert any("response time" in r["title"] for r in perf_recs)
+        assert any("cache hit rate" in r["title"] for r in perf_recs)
+
+        cost_recs = [r for r in recommendations if r["type"] == "cost"]
+        assert any("token usage" in r["title"] for r in cost_recs)
