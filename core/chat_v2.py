@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 import time
 from dataclasses import dataclass, field
@@ -10,7 +9,12 @@ from typing import Dict, List, Optional, Protocol
 
 import structlog
 
-from core.interfaces import CacheProvider, LLMProvider, QualityEvaluator
+from core.interfaces import (
+    CacheProvider,
+    LLMProvider,
+    LLMResponse,
+    QualityEvaluator,
+)
 from core.context_manager import ContextManager
 from monitoring.metrics import MetricsRecorder
 
@@ -317,7 +321,7 @@ class RecursiveThinkingEngine:
         self,
         messages: List[Dict[str, str]],
         temperature: float,
-    ) -> 'LLMResponse':
+    ) -> LLMResponse:
         """Get response with caching."""
         
         # Generate cache key
@@ -327,7 +331,8 @@ class RecursiveThinkingEngine:
         cached = await self.cache.get(cache_key)
         if cached:
             logger.info("cache_hit", key=cache_key[:8])
-            cached["cached"] = True
+            if hasattr(cached, "cached"):
+                cached.cached = True
             return cached
             
         # Call LLM
@@ -407,7 +412,7 @@ Respond in this JSON format:
                 try:
                     idx = int(selection) - 1
                     best = alternatives[idx] if 0 <= idx < len(alternatives) else current_best
-                except:
+                except Exception:
                     best = current_best
                     
         except json.JSONDecodeError:
