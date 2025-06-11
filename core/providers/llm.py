@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional, Protocol
 
 import aiohttp
+import openai
 import structlog
 from tenacity import (
     retry,
@@ -194,6 +195,121 @@ class OpenRouterLLMProvider:
         """Stream chat responses with proper error handling."""
         # Implementation would handle streaming responses
         # For now, yield the complete response
+        response = await self.chat(
+            messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+        yield response.content
+
+
+class OpenAILLMProvider:
+    """LLM provider using OpenAI's official Python package."""
+
+    def __init__(
+        self,
+        api_key: str,
+        model: str,
+        *,
+        max_retries: int = 3,
+        timeout: float = 30.0,
+        client: Optional[openai.AsyncOpenAI] = None,
+    ) -> None:
+        self.api_key = api_key
+        self.model = model
+        self.max_retries = max_retries
+        self.timeout = timeout
+        self._client = client
+        self._owned_client = client is None
+
+    async def __aenter__(self):
+        if self._owned_client:
+            self._client = openai.AsyncOpenAI(api_key=self.api_key, timeout=self.timeout)
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        if self._owned_client and self._client:
+            await self._client.close()
+
+    def _request_id(self, messages: List[Dict]) -> str:
+        content = json.dumps(messages, sort_keys=True)
+        return hashlib.md5(content.encode()).hexdigest()[:8]
+
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=2, max=10),
+        retry=retry_if_exception_type((APIError, openai.OpenAIError)),
+        before_sleep=before_sleep_log(logger, "warning"),
+    )
+    async def chat(
+        self,
+        messages: List[Dict[str, str]],
+        *,
+        temperature: float = 0.7,
+        max_tokens: Optional[int] = None,
+        metadata: Optional[Dict] = None,
+    ) -> StandardLLMResponse:
+        request_id = self._request_id(messages)
+        logger.info(
+            "llm_request_start",
+            request_id=request_id,
+            model=self.model,
+            message_count=len(messages),
+            metadata=metadata,
+        )
+
+        if not self._client:
+            self._client = openai.AsyncOpenAI(api_key=self.api_key, timeout=self.timeout)
+
+        try:
+            resp = await self._client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
+
+            content = resp.choices[0].message.content.strip()
+            usage = resp.usage or {}
+
+            logger.info(
+                "llm_request_success",
+                request_id=request_id,
+                prompt_tokens=usage.get("prompt_tokens", 0),
+                completion_tokens=usage.get("completion_tokens", 0),
+            )
+
+            return StandardLLMResponse(
+                content=content,
+                usage=usage,
+                model=self.model,
+                cached=False,
+            )
+
+        except openai.RateLimitError as e:
+            logger.error("llm_rate_limit", request_id=request_id, error=str(e))
+            raise RateLimitError(str(e))
+        except openai.BadRequestError as e:
+            if "token" in str(e).lower():
+                logger.error("llm_token_limit", request_id=request_id, error=str(e))
+                raise TokenLimitError(str(e))
+            raise APIError(str(e))
+        except openai.OpenAIError as e:
+            logger.error(
+                "llm_request_failed",
+                request_id=request_id,
+                error=str(e),
+                error_type=type(e).__name__,
+            )
+            raise APIError(str(e)) from e
+
+    async def stream_chat(
+        self,
+        messages: List[Dict[str, str]],
+        *,
+        temperature: float = 0.7,
+        max_tokens: Optional[int] = None,
+    ):
         response = await self.chat(
             messages,
             temperature=temperature,

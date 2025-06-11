@@ -20,6 +20,7 @@ from core.context_manager import ContextManager
 from monitoring.metrics import MetricsRecorder
 from core.providers import (
     OpenRouterLLMProvider,
+    OpenAILLMProvider,
     InMemoryLRUCache,
     EnhancedQualityEvaluator,
 )
@@ -60,6 +61,7 @@ class CoRTConfig:
 
     api_key: str | None = field(default_factory=lambda: settings.openrouter_api_key)
     model: str = field(default_factory=lambda: settings.model)
+    provider: str = field(default_factory=lambda: settings.llm_provider)
     max_context_tokens: int = 2000
     cache_size: int = 128
     max_retries: int = 3
@@ -479,11 +481,18 @@ Respond in this JSON format:
 def create_default_engine(config: CoRTConfig) -> RecursiveThinkingEngine:
     """Convenience helper to build a thinking engine from a config."""
 
-    llm = OpenRouterLLMProvider(
-        api_key=config.api_key or os.getenv("OPENROUTER_API_KEY"),
-        model=config.model,
-        max_retries=config.max_retries,
-    )
+    if config.provider.lower() == "openai":
+        llm = OpenAILLMProvider(
+            api_key=config.api_key or os.getenv("OPENAI_API_KEY"),
+            model=config.model,
+            max_retries=config.max_retries,
+        )
+    else:
+        llm = OpenRouterLLMProvider(
+            api_key=config.api_key or os.getenv("OPENROUTER_API_KEY"),
+            model=config.model,
+            max_retries=config.max_retries,
+        )
 
     cache = InMemoryLRUCache(max_size=config.cache_size)
 

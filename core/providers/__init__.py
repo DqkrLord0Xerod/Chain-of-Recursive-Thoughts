@@ -19,6 +19,7 @@ from .llm import (
     StandardLLMResponse,
     LLMProvider,
     OpenRouterLLMProvider,
+    OpenAILLMProvider,
     MultiProviderLLM,
 )
 from .quality import EnhancedQualityEvaluator, SimpleQualityEvaluator
@@ -38,6 +39,7 @@ __all__ = [
     "StandardLLMResponse",
     "LLMProvider",
     "OpenRouterLLMProvider",
+    "OpenAILLMProvider",
     "MultiProviderLLM",
     "EnhancedQualityEvaluator",
     "SimpleQualityEvaluator",
