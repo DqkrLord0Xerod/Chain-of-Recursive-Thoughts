@@ -21,7 +21,7 @@ If running on Linux:
 pip install -r requirements.txt
 cd frontend && npm install
 cd ..
-python recthink_web.py  # start the API server
+python recthink_web_v2.py  # start the API server
 ```
 
 (open a new shell)
