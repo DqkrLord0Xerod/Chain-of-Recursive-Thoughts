@@ -1,0 +1,112 @@
+from __future__ import annotations
+
+import json
+from dataclasses import asdict
+from typing import Dict, Optional
+
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+
+from core.chat_v2 import (
+    CoRTConfig,
+    ThinkingResult,
+    RecursiveThinkingEngine,
+    create_default_engine,
+)
+
+app = FastAPI(title="RecThink API v2")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Global store for chat engines per session
+chat_sessions: Dict[str, "RecursiveThinkingEngine"] = {}
+
+
+class ChatRequest(BaseModel):
+    session_id: str
+    message: str
+    thinking_rounds: Optional[int] = None
+    alternatives_per_round: int = 3
+
+
+@app.post("/chat")
+async def chat_endpoint(request: ChatRequest):
+    if request.session_id not in chat_sessions:
+        chat_sessions[request.session_id] = create_default_engine(CoRTConfig())
+
+    engine = chat_sessions[request.session_id]
+    try:
+        result: ThinkingResult = await engine.think_and_respond(
+            request.message,
+            thinking_rounds=request.thinking_rounds,
+            alternatives_per_round=request.alternatives_per_round,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    history = [asdict(round) for round in result.thinking_history]
+
+    return {
+        "session_id": request.session_id,
+        "response": result.response,
+        "thinking_rounds": result.thinking_rounds,
+        "thinking_history": history,
+    }
+
+
+@app.websocket("/ws/{session_id}")
+async def websocket_endpoint(websocket: WebSocket, session_id: str):
+    await websocket.accept()
+
+    if session_id not in chat_sessions:
+        chat_sessions[session_id] = create_default_engine(CoRTConfig())
+
+    engine = chat_sessions[session_id]
+
+    try:
+        while True:
+            data = await websocket.receive_text()
+            try:
+                payload = json.loads(data)
+                message = payload.get("message")
+                rounds = payload.get("thinking_rounds")
+                alts = payload.get("alternatives_per_round", 3)
+            except json.JSONDecodeError:
+                await websocket.send_json({"error": "Invalid JSON"})
+                continue
+
+            try:
+                result: ThinkingResult = await engine.think_and_respond(
+                    message,
+                    thinking_rounds=rounds,
+                    alternatives_per_round=alts,
+                )
+            except Exception as exc:
+                await websocket.send_json({"error": str(exc)})
+                continue
+
+            await websocket.send_json(
+                {
+                    "type": "final",
+                    "response": result.response,
+                    "thinking_rounds": result.thinking_rounds,
+                    "thinking_history": [asdict(r) for r in result.thinking_history],
+                }
+            )
+    except WebSocketDisconnect:
+        pass
+    finally:
+        await websocket.close()
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run("recthink_web_v2:app", host="0.0.0.0", port=8000, reload=True)

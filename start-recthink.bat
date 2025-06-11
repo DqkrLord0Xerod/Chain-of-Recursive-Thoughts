@@ -7,7 +7,7 @@ pip install -r requirements.txt --no-cache-dir
 
 echo.
 echo [1/2] Starting Backend API Server...
-start cmd /k "python recthink_web.py"
+start cmd /k "python recthink_web_v2.py"
 
 echo [2/2] Starting Frontend Development Server...
 cd frontend
