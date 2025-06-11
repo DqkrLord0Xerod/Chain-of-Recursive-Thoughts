@@ -6,7 +6,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))  # noqa: E402
 import asyncio  # noqa: E402
 from typing import List, Dict  # noqa: E402
 
-from core.adaptive_reasoning import AdaptiveReasoner  # noqa: E402
+from core.adaptive_thinking import AdaptiveThinkingAgent  # noqa: E402
 from core.interfaces import LLMProvider, QualityEvaluator  # noqa: E402
 
 
@@ -29,13 +29,13 @@ class DummyEval(QualityEvaluator):
         return self.scores.get(response, 0.0)
 
 
-async def run_reasoner():
+async def run_thinker():
     llm = DummyLLM(["bad", "better", "best", "best"])
     evaluator = DummyEval({"bad": 0.1, "better": 0.6, "best": 0.96})
-    reasoner = AdaptiveReasoner(llm, evaluator)
-    return await reasoner.reason("hi", max_rounds=5)
+    thinker = AdaptiveThinkingAgent(llm, evaluator)
+    return await thinker.think("hi", max_rounds=5)
 
 
-def test_adaptive_reasoning_converges():
-    result = asyncio.run(run_reasoner())
+def test_adaptive_thinking_converges():
+    result = asyncio.run(run_thinker())
     assert result == "best"
