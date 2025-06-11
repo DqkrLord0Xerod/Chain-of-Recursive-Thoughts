@@ -6,6 +6,7 @@ import json
 import time
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Protocol
+import os
 
 import structlog
 
@@ -17,6 +18,13 @@ from core.interfaces import (
 )
 from core.context_manager import ContextManager
 from monitoring.metrics import MetricsRecorder
+from core.providers import (
+    OpenRouterLLMProvider,
+    InMemoryLRUCache,
+    EnhancedQualityEvaluator,
+)
+from config import settings
+import tiktoken
 
 
 logger = structlog.get_logger(__name__)
@@ -44,6 +52,17 @@ class ThinkingResult:
     processing_time: float
     convergence_reason: str
     metadata: Dict = field(default_factory=dict)
+
+
+@dataclass
+class CoRTConfig:
+    """Configuration for building a default thinking engine."""
+
+    api_key: str | None = field(default_factory=lambda: settings.openrouter_api_key)
+    model: str = field(default_factory=lambda: settings.model)
+    max_context_tokens: int = 2000
+    cache_size: int = 128
+    max_retries: int = 3
 
 
 class ThinkingStrategy(Protocol):
@@ -453,5 +472,35 @@ Respond in this JSON format:
         
         async with aiofiles.open(filepath, 'r') as f:
             data = json.loads(await f.read())
-            
+
         self.conversation_history = data.get("conversation", [])
+
+
+def create_default_engine(config: CoRTConfig) -> RecursiveThinkingEngine:
+    """Convenience helper to build a thinking engine from a config."""
+
+    llm = OpenRouterLLMProvider(
+        api_key=config.api_key or os.getenv("OPENROUTER_API_KEY"),
+        model=config.model,
+        max_retries=config.max_retries,
+    )
+
+    cache = InMemoryLRUCache(max_size=config.cache_size)
+
+    tokenizer = tiktoken.get_encoding("cl100k_base")
+    context_manager = ContextManager(
+        max_tokens=config.max_context_tokens,
+        tokenizer=tokenizer,
+    )
+
+    evaluator = EnhancedQualityEvaluator()
+
+    strategy = AdaptiveThinkingStrategy(llm)
+
+    return RecursiveThinkingEngine(
+        llm=llm,
+        cache=cache,
+        evaluator=evaluator,
+        context_manager=context_manager,
+        thinking_strategy=strategy,
+    )

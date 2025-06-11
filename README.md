@@ -47,7 +47,14 @@ export APP_ENV=development
 python -m cli.main
 ```
 You can also limit the context window by setting `max_context_tokens` in a
-`CoRTConfig` instance when creating `EnhancedRecursiveThinkingChat`.
+`CoRTConfig` instance when creating a `RecursiveThinkingEngine`:
+
+```python
+from core.chat_v2 import CoRTConfig, create_default_engine
+
+config = CoRTConfig(api_key="your-key")
+engine = create_default_engine(config)
+```
 
 ### The Secret Sauce
 The magic is in:

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from core.chat import CoRTConfig, AsyncEnhancedRecursiveThinkingChat
+from core.chat_v2 import CoRTConfig, create_default_engine
 from config import settings
 
 
@@ -9,8 +9,7 @@ async def main() -> None:
 
     Commands:
         exit      Quit the program.
-        save      Save the conversation history.
-        save full Save the entire thinking log.
+        save      Save the conversation history to ``conversation.json``.
     """
     print("🤖 Enhanced Recursive Thinking Chat")
     print("=" * 50)
@@ -20,8 +19,8 @@ async def main() -> None:
         print("Error: OPENROUTER_API_KEY not set. Please export it or add to .env")
         return
 
-    config = CoRTConfig(api_key=api_key)
-    chat = AsyncEnhancedRecursiveThinkingChat(config)
+    config = CoRTConfig(api_key=api_key, model=settings.model)
+    chat = create_default_engine(config)
 
     print("\nChat initialized! Type 'exit' to quit, 'save' to save conversation.")
     print("The AI will think recursively before each response.\n")
@@ -31,10 +30,7 @@ async def main() -> None:
         if user_input.lower() == "exit":
             break
         if user_input.lower() == "save":
-            chat.save_conversation()
-            continue
-        if user_input.lower() == "save full":
-            chat.save_full_log()
+            await chat.save_conversation("conversation.json")
             continue
         if not user_input:
             continue
@@ -53,12 +49,8 @@ async def main() -> None:
 
     save_on_exit = input("Save conversation before exiting? (y/n): ").strip().lower()
     if save_on_exit == "y":
-        chat.save_conversation()
-        save_full = input("Save full thinking log? (y/n): ").strip().lower()
-        if save_full == "y":
-            chat.save_full_log()
+        await chat.save_conversation("conversation.json")
     print("Goodbye! 👋")
-    await chat.close()
 
 
 if __name__ == "__main__":
