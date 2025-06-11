@@ -1,10 +1,10 @@
-# 🧠 CoRT — Chain of Recursive Thoughts
+# 🧠 Recursive Evaluation Framework (REF)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-green.svg)](https://fastapi.tiangolo.com/)
 
-**CoRT** is an advanced AI reasoning engine that refines LLM outputs through iterative self-critique and convergence, producing more accurate and context-aware results than traditional single-pass models.
+> REF is a modular engine for recursively evaluating, refining, and selecting reasoning outputs across iterative stages. Originally forked from CoTR, REF refactors the system into a modular, executable reasoning framework with recursive evaluation at its core.
 
 ---
 
