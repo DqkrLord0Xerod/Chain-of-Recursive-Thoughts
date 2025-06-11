@@ -7,7 +7,6 @@ import io
 import json
 import logging
 import os
-import pickle
 import random
 import re
 import time
@@ -15,18 +14,18 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import AsyncIterator, Dict, List, Tuple
 
-import aiohttp
 
 import structlog
 import tiktoken
 from tiktoken import _educational
 
-from api import openrouter
 from config import settings
 from core.context import ContextManager
 from core.recursion import ConvergenceTracker, QualityAssessor
 from exceptions import APIError, RateLimitError, TokenLimitError
 from monitoring import MetricsRecorder
+from core.llm_client import LLMClient
+from core.cache_manager import CacheManager
 
 logging.basicConfig(level=logging.INFO)
 structlog.configure(logger_factory=structlog.stdlib.LoggerFactory())
@@ -63,29 +62,20 @@ class CoRTConfig:
 
 class EnhancedRecursiveThinkingChat:
     def __init__(self, config: CoRTConfig) -> None:
-        self.api_key = config.api_key or os.getenv("OPENROUTER_API_KEY")
-        self.model = config.model
+        self.llm_client = LLMClient(
+            api_key=config.api_key or os.getenv("OPENROUTER_API_KEY"),
+            model=config.model,
+            max_retries=config.max_retries,
+        )
+        self.cache_manager = CacheManager(
+            enabled=config.caching_enabled,
+            memory_size=config.cache_size,
+            disk_path=config.disk_cache_path,
+            disk_size=config.disk_cache_size,
+        )
         self.max_context_tokens = config.max_context_tokens
-        self.headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "HTTP-Referer": settings.frontend_url,
-            "X-Title": "Recursive Thinking Chat",
-            "Content-Type": "application/json",
-        }
         self.conversation_history: List[Dict] = []
         self.full_thinking_log: List[Dict] = []
-        self.caching_enabled = config.caching_enabled
-        self.cache_size = config.cache_size
-        self.cache: Dict[Tuple[str, str], str] = {}
-        self.disk_cache_path = config.disk_cache_path
-        self.disk_cache_size = config.disk_cache_size
-        self.disk_cache: Dict[Tuple[str, str], str] = {}
-        if self.disk_cache_path:
-            self._load_disk_cache()
-        self.max_retries = config.max_retries
-        self.failure_count = 0
-        self.circuit_open = False
-        self.circuit_reset_time = 0.0
         self.quality_assessor = QualityAssessor(self._semantic_similarity)
         try:
             self.tokenizer = tiktoken.get_encoding("cl100k_base")
@@ -119,8 +109,10 @@ class EnhancedRecursiveThinkingChat:
             "Summarize the following conversation in a concise form while "
             "preserving intent and prior decisions:\n" + content
         )
-        return openrouter.sync_chat_completion(
-            self.headers, [{"role": "user", "content": prompt}], self.model, stream=False, temperature=0.3
+        return self.llm_client.chat(
+            [{"role": "user", "content": prompt}],
+            temperature=0.3,
+            stream=False,
         )
 
     def _token_count(self, text: str) -> int:
@@ -134,29 +126,6 @@ class EnhancedRecursiveThinkingChat:
             total += self._token_count(call.get("response", ""))
         return total
 
-    def _load_disk_cache(self) -> None:
-        if not self.disk_cache_path or not os.path.exists(self.disk_cache_path):
-            return
-        try:
-            with open(self.disk_cache_path, "rb") as f:
-                data = pickle.load(f)
-            if isinstance(data, dict):
-                self.disk_cache = dict(data)
-                while len(self.disk_cache) > self.disk_cache_size:
-                    self.disk_cache.pop(next(iter(self.disk_cache)))
-                for k in list(self.disk_cache)[-self.cache_size:]:
-                    self.cache[k] = self.disk_cache[k]
-        except Exception as e:  # pragma: no cover
-            self.logger.warning("Failed to load disk cache: %s", e)
-
-    def _save_disk_cache(self) -> None:
-        if not self.disk_cache_path:
-            return
-        try:
-            with open(self.disk_cache_path, "wb") as f:
-                pickle.dump(self.disk_cache, f)
-        except Exception as e:  # pragma: no cover
-            self.logger.warning("Failed to save disk cache: %s", e)
 
     def _call_api(
         self,
@@ -167,66 +136,23 @@ class EnhancedRecursiveThinkingChat:
         messages = self.context_manager.optimize_context(messages)
         cache_key = self._cache_key(messages)
         api_entry = {"messages": messages}
-        if self.caching_enabled:
-            if cache_key in self.cache:
-                cached = self.cache[cache_key]
-                if stream:
-                    self.logger.info(cached)
-                api_entry["response"] = cached
-                self.full_thinking_log.append(api_entry)
-                return cached
-            if self.disk_cache_path and cache_key in self.disk_cache:
-                cached = self.disk_cache[cache_key]
-                if stream:
-                    self.logger.info(cached)
-                self.cache[cache_key] = cached
-                if len(self.cache) > self.cache_size:
-                    self.cache.pop(next(iter(self.cache)))
-                api_entry["response"] = cached
-                self.full_thinking_log.append(api_entry)
-                return cached
+        cached = self.cache_manager.get(cache_key)
+        if cached is not None:
+            if stream:
+                self.logger.info(cached)
+            api_entry["response"] = cached
+            self.full_thinking_log.append(api_entry)
+            return cached
 
-        if self.circuit_open:
-            if time.time() < self.circuit_reset_time:
-                raise APIError("Circuit breaker open")
-            self.circuit_open = False
-            self.failure_count = 0
-
-        for attempt in range(1, self.max_retries + 1):
-            try:
-                result = openrouter.sync_chat_completion(
-                    self.headers,
-                    messages,
-                    self.model,
-                    temperature=temperature,
-                    stream=stream,
-                )
-                if self.caching_enabled:
-                    self.cache[cache_key] = result
-                    if len(self.cache) > self.cache_size:
-                        self.cache.pop(next(iter(self.cache)))
-                    if self.disk_cache_path:
-                        self.disk_cache[cache_key] = result
-                        while len(self.disk_cache) > self.disk_cache_size:
-                            self.disk_cache.pop(next(iter(self.disk_cache)))
-                        self._save_disk_cache()
-                api_entry["response"] = result
-                self.full_thinking_log.append(api_entry)
-                return result
-            except (APIError, RateLimitError, TokenLimitError, Exception) as e:
-                self.logger.warning(
-                    "API call failed (attempt %s/%s): %s",
-                    attempt,
-                    self.max_retries,
-                    e,
-                )
-                self.failure_count += 1
-                if attempt == self.max_retries:
-                    self.circuit_open = True
-                    self.circuit_reset_time = time.time() + 2 ** attempt
-                    raise
-                delay = 2 ** (attempt - 1) + random.uniform(0, 1)
-                time.sleep(delay)
+        result = self.llm_client.chat(
+            messages,
+            temperature=temperature,
+            stream=stream,
+        )
+        self.cache_manager.set(cache_key, result)
+        api_entry["response"] = result
+        self.full_thinking_log.append(api_entry)
+        return result
 
     async def _async_call_api(
         self,
@@ -236,69 +162,27 @@ class EnhancedRecursiveThinkingChat:
         messages = self.context_manager.optimize_context(messages)
         cache_key = self._cache_key(messages)
         api_entry = {"messages": messages}
-        if self.caching_enabled:
-            if cache_key in self.cache:
-                result = self.cache[cache_key]
-                api_entry["response"] = result
-                self.full_thinking_log.append(api_entry)
-                return result
-            if self.disk_cache_path and cache_key in self.disk_cache:
-                result = self.disk_cache[cache_key]
-                self.cache[cache_key] = result
-                if len(self.cache) > self.cache_size:
-                    self.cache.pop(next(iter(self.cache)))
-                api_entry["response"] = result
-                self.full_thinking_log.append(api_entry)
-                return result
+        cached = self.cache_manager.get(cache_key)
+        if cached is not None:
+            api_entry["response"] = cached
+            self.full_thinking_log.append(api_entry)
+            return cached
 
-        if self.circuit_open:
-            if time.time() < self.circuit_reset_time:
-                raise APIError("Circuit breaker open")
-            self.circuit_open = False
-            self.failure_count = 0
-
-        for attempt in range(1, self.max_retries + 1):
-            try:
-                async with self.semaphore:
-                    result = await openrouter.async_chat_completion(
-                        self.headers,
-                        messages,
-                        self.model,
-                        temperature=temperature,
-                        session=self.session,
-                    )
-                if self.caching_enabled:
-                    self.cache[cache_key] = result
-                    if len(self.cache) > self.cache_size:
-                        self.cache.pop(next(iter(self.cache)))
-                    if self.disk_cache_path:
-                        self.disk_cache[cache_key] = result
-                        while len(self.disk_cache) > self.disk_cache_size:
-                            self.disk_cache.pop(next(iter(self.disk_cache)))
-                        self._save_disk_cache()
-                api_entry["response"] = result
-                self.full_thinking_log.append(api_entry)
-                return result
-            except (APIError, RateLimitError, TokenLimitError, Exception) as e:
-                self.logger.warning(
-                    "API call failed (attempt %s/%s): %s",
-                    attempt,
-                    self.max_retries,
-                    e,
-                )
-                self.failure_count += 1
-                if attempt == self.max_retries:
-                    self.circuit_open = True
-                    self.circuit_reset_time = time.time() + 2 ** attempt
-                    raise
-                delay = 2 ** (attempt - 1) + random.uniform(0, 1)
-                await asyncio.sleep(delay)
+        async with self.semaphore:
+            result = await self.llm_client.async_chat(
+                messages,
+                temperature=temperature,
+            )
+        self.cache_manager.set(cache_key, result)
+        api_entry["response"] = result
+        self.full_thinking_log.append(api_entry)
+        return result
 
     def _semantic_similarity(self, text1: str, text2: str) -> float:
         if not text1 or not text2:
             return 0.0
         try:
-            emb1, emb2 = openrouter.get_embeddings(self.headers, [text1, text2])
+            emb1, emb2 = self.llm_client.embeddings([text1, text2])
             dot = sum(a * b for a, b in zip(emb1, emb2))
             norm1 = sum(a * a for a in emb1) ** 0.5
             norm2 = sum(b * b for b in emb2) ** 0.5
@@ -528,11 +412,10 @@ Respond with just a number between 1 and 5."""
 class AsyncEnhancedRecursiveThinkingChat(EnhancedRecursiveThinkingChat):
     def __init__(self, config: CoRTConfig, max_connections: int = 5) -> None:
         super().__init__(config)
-        self.session = aiohttp.ClientSession()
         self.semaphore = asyncio.Semaphore(max_connections)
 
     async def close(self) -> None:
-        await self.session.close()
+        await self.llm_client.close()
 
     async def _parallel_alternative_generation(
         self,
