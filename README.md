@@ -64,8 +64,13 @@ This enables:
    `pip install -r requirements.txt`
 
 2. Configure
-   `cp .env.example .env`
-   (Set `OPENROUTER_API_KEY` in `.env`)
+   Create a `.env` file and set at minimum:
+   ```
+   OPENROUTER_API_KEY=your-key
+   APP_ENV=development
+   FRONTEND_URL=http://localhost:3000
+   ```
+   See `config/config.py` for all available options.
 
 3. Run server
    `uvicorn recthink_web:app --reload`
