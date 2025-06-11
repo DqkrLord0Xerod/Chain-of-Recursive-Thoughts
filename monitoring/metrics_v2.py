@@ -288,9 +288,6 @@ class MetricsAnalyzer:
 
     def get_summary_stats(self) -> Dict[str, Any]:
         """Get summary statistics."""
-        if not self.sessions:
-            return {"status": "no_data"}
-
         recent_sessions = list(self.sessions)[-100:]  # Last 100 sessions
 
         return {

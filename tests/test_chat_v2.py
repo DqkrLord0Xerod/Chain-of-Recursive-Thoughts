@@ -128,6 +128,7 @@ class TestRecursiveThinkingEngine:
             evaluator=evaluator,
             context_manager=context_manager,
             thinking_strategy=strategy,
+            model_selector=None,
         )
         
         return engine
@@ -347,6 +348,7 @@ class TestIntegration:
             evaluator=evaluator,
             context_manager=context_manager,
             thinking_strategy=strategy,
+            model_selector=None,
         )
         
         # Execute thinking
@@ -395,6 +397,7 @@ class TestIntegration:
             evaluator=evaluator,
             context_manager=context_manager,
             thinking_strategy=strategy,
+            model_selector=None,
         )
         
         # Have a conversation
@@ -412,6 +415,7 @@ class TestIntegration:
             evaluator=evaluator,
             context_manager=context_manager,
             thinking_strategy=strategy,
+            model_selector=None,
         )
         
         await new_engine.load_conversation(str(save_path))

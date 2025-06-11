@@ -51,6 +51,7 @@ async def test_invalid_json_alternative():
         evaluator=DummyEvaluator(),
         context_manager=ContextManager(100, type("T", (), {"encode": lambda self, t: t.split()})()),
         thinking_strategy=NoOpStrategy(),
+        model_selector=None,
     )
 
     result = await engine.think_and_respond("prompt", alternatives_per_round=1)
@@ -68,6 +69,7 @@ async def test_selection_out_of_range():
         evaluator=DummyEvaluator(),
         context_manager=ContextManager(100, type("T", (), {"encode": lambda self, t: t.split()})()),
         thinking_strategy=NoOpStrategy(),
+        model_selector=None,
     )
 
     result = await engine.think_and_respond("prompt", alternatives_per_round=1)

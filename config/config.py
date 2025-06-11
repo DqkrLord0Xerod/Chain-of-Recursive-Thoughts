@@ -269,7 +269,20 @@ class ProductionSettings(BaseSettings):
 def load_production_config() -> ProductionSettings:
     """Load and validate production configuration."""
     try:
-        config = ProductionSettings()
+        data = {
+            "environment": os.getenv("APP_ENV", "production"),
+            "frontend_url": os.getenv("FRONTEND_URL"),
+            "llm": {
+                "primary_model": os.getenv("LLM_PRIMARY_MODEL"),
+                "primary_api_key": os.getenv("LLM_PRIMARY_API_KEY"),
+            },
+            "security": {
+                "api_key_master_key": os.getenv("API_KEY_MASTER_KEY"),
+                "session_secret_key": os.getenv("SESSION_SECRET_KEY"),
+            },
+            "database": {"postgres_url": os.getenv("DATABASE_URL")},
+        }
+        config = ProductionSettings.model_validate(data)
         _validate_runtime_config(config)
         return config
     except Exception as exc:

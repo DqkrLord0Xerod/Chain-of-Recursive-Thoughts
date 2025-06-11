@@ -40,6 +40,7 @@ async def test_engine_runs_event_loop():
         evaluator=DummyEvaluator(),
         context_manager=ContextManager(100, tokenizer),
         thinking_strategy=OneRoundStrategy(),
+        model_selector=None,
     )
     result = await engine.think_and_respond('hello', thinking_rounds=1, alternatives_per_round=1)
     assert result.response == 'HELLO'
