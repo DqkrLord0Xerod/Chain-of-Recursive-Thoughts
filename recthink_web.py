@@ -165,14 +165,16 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
             message_data = json.loads(data)
 
             if message_data["type"] == "message":
-                result = await engine.think_and_respond(message_data["content"])
-
-                await websocket.send_json({
-                    "type": "final",
-                    "response": result.response,
-                    "thinking_rounds": result.thinking_rounds,
-                    "thinking_history": result.thinking_history,
-                })
+                async for update in engine.stream_think_and_respond(message_data["content"]):
+                    if update.get("final"):
+                        await websocket.send_json({
+                            "type": "final",
+                            "response": update["response"],
+                            "thinking_rounds": update["thinking_rounds"],
+                            "thinking_history": update["thinking_history"],
+                        })
+                    else:
+                        await websocket.send_json({"type": "chunk", **update})
 
     except WebSocketDisconnect:
         logger.info(f"WebSocket disconnected: {session_id}")

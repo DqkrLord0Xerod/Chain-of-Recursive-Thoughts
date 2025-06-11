@@ -31,6 +31,13 @@ cd frontend
 npm start
 ```
 
+### WebSocket streaming
+The backend exposes a WebSocket endpoint for progressive updates.
+Connect to `/ws/{session_id}` after initializing a session.
+Each update has `type: "chunk"` with a partial response.
+When processing completes the server sends `type: "final"` with the
+full thinking history.
+
 ## Try it yourself
 ### CLI usage
 ```bash

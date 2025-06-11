@@ -7,7 +7,6 @@ import io
 import json
 import logging
 import os
-import random
 import aiohttp
 import re
 import time
@@ -23,7 +22,6 @@ from tiktoken import _educational
 from config import settings
 from core.context import ContextManager
 from core.recursion import ConvergenceTracker, QualityAssessor
-from exceptions import APIError, RateLimitError, TokenLimitError
 from monitoring import MetricsRecorder
 from core.llm_client import LLMClient
 from core.cache_manager import CacheManager
@@ -126,7 +124,6 @@ class EnhancedRecursiveThinkingChat:
                 total += self._token_count(msg.get("content", ""))
             total += self._token_count(call.get("response", ""))
         return total
-
 
     def _call_api(
         self,
@@ -617,3 +614,107 @@ Respond with just a number between 1 and 5."""
             api_calls=api_calls,
             processing_time=processing_time,
         )
+
+    async def stream_think_and_respond(
+        self,
+        user_input: str,
+        verbose: bool = True,
+        thinking_rounds: int | None = None,
+        alternatives_per_round: int = 3,
+        metrics_recorder: MetricsRecorder | None = None,
+    ) -> AsyncIterator[Dict]:
+        """Yield progressive updates while thinking."""
+
+        start_index = len(self.full_thinking_log)
+        start_time = time.time()
+
+        if thinking_rounds is None:
+            thinking_rounds = await self._async_determine_thinking_rounds(user_input)
+
+        if verbose:
+            self.logger.info("🤔 Thinking... (%s rounds needed)", thinking_rounds)
+
+        messages = self.conversation_history + [{"role": "user", "content": user_input}]
+        current_best = await self._async_call_api(messages)
+        yield {"round": 0, "response": current_best, "selected": True}
+
+        thinking_history = [{"round": 0, "response": current_best, "selected": True}]
+
+        tracker = ConvergenceTracker(
+            self._semantic_similarity,
+            lambda resp, p: self.quality_assessor.comprehensive_score(resp, p)["overall"],
+        )
+        tracker.add(current_best, user_input)
+
+        convergence_reason = "max_rounds"
+        rounds_completed = 0
+
+        for round_num in range(1, thinking_rounds + 1):
+            if verbose:
+                self.logger.info("=== ROUND %s/%s ===", round_num, thinking_rounds)
+
+            new_best, alternatives, explanation = await self._async_batch_generate_and_evaluate(
+                current_best,
+                user_input,
+                alternatives_per_round,
+            )
+
+            for i, alt in enumerate(alternatives):
+                entry = {
+                    "round": round_num,
+                    "response": alt,
+                    "selected": False,
+                    "alternative_number": i + 1,
+                }
+                thinking_history.append(entry)
+                yield entry
+
+            if new_best != current_best:
+                for item in thinking_history:
+                    if item["round"] == round_num and item["response"] == new_best:
+                        item["selected"] = True
+                        item["explanation"] = explanation
+                current_best = new_best
+            else:
+                for item in thinking_history:
+                    if item["selected"] and item["response"] == current_best:
+                        item["explanation"] = explanation
+                        break
+
+            tracker.add(current_best, user_input)
+            cont, reason = tracker.should_continue(user_input)
+            rounds_completed += 1
+            if not cont:
+                convergence_reason = reason
+                break
+
+        self.conversation_history.append({"role": "user", "content": user_input})
+        self.conversation_history.append({"role": "assistant", "content": current_best})
+        self.conversation_history = self.context_manager.optimize_context(self.conversation_history)
+
+        api_calls = self.full_thinking_log[start_index:]
+        processing_time = time.time() - start_time
+        token_usage = self._calculate_token_usage(api_calls)
+
+        if metrics_recorder is not None:
+            metrics_recorder.record_run(
+                processing_time=processing_time,
+                token_usage=token_usage,
+                num_rounds=rounds_completed,
+                convergence_reason=convergence_reason,
+            )
+
+        result = ThinkingResult(
+            response=current_best,
+            thinking_rounds=thinking_rounds,
+            thinking_history=thinking_history,
+            api_calls=api_calls,
+            processing_time=processing_time,
+        )
+
+        yield {
+            "final": True,
+            "response": result.response,
+            "thinking_rounds": result.thinking_rounds,
+            "thinking_history": result.thinking_history,
+        }
