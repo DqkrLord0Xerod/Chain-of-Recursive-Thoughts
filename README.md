@@ -145,6 +145,16 @@ Example request:
 
 `curl -X POST http://localhost:8000/api/send_message -H "Content-Type: application/json" -d '{"session_id":"sess1","message":"Hello, CoRT!","thinking_rounds":2}'`
 
+### v2 Endpoints
+
+The updated `recthink_web_v2.py` server exposes the following endpoints:
+
+| Method/Path           | Description                            |
+| --------------------- | -------------------------------------- |
+| `POST /chat`          | Run a reasoning cycle and return the final response |
+| `WS   /ws/{session}`  | Interactive WebSocket for single replies |
+| `WS   /ws/stream/{session}` | Stream intermediate thinking updates |
+
 Full API reference available in `docs/API_REFERENCE.md`.
 
 ---
@@ -152,6 +162,11 @@ Full API reference available in `docs/API_REFERENCE.md`.
 ## 🔌 Extending CoRT
 
 Want to integrate a new LLM, cache, or thinking module? Start here:
+
+Current provider classes include:
+- `OpenRouterLLMProvider`
+- `OpenAILLMProvider`
+- `MultiProviderLLM` and `ResilientLLMProvider` for failover setups.
 
 * `docs/EXTENDING.md#custom-providers`
 * `docs/EXTENDING.md#custom-strategies`

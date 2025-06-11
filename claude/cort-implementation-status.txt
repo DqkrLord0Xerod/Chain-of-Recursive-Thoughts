@@ -64,10 +64,10 @@ This document clarifies what has been actually implemented in the architecture r
 ## ❌ Not Implemented (Referenced Only)
 
 ### 1. Missing Python Modules
-- ❌ `core/resilience/__init__.py`
+The following init files are now implemented:
+`core/resilience/__init__.py`, `core/security/__init__.py`, and
+`core/providers/__init__.py`.
 - ❌ `core/optimization/__init__.py`
-- ❌ `core/security/__init__.py`
-- ❌ `core/providers/__init__.py` (created but imports non-existent modules)
 
 ### 2. Missing Tests
 - ❌ `tests/test_resilience.py`
