@@ -34,7 +34,7 @@ def test_send_message_custom_rounds(monkeypatch):
             "thinking_history": [],
         }
 
-    recthink_web.chat_instances[session_id].think_and_respond = fake_think
+    recthink_web.engine_instances[session_id].think_and_respond = fake_think
 
     resp = client.post(
         "/api/send_message",
@@ -71,7 +71,7 @@ def test_send_message_defaults(monkeypatch):
             "thinking_history": [],
         }
 
-    recthink_web.chat_instances[session_id].think_and_respond = fake_think
+    recthink_web.engine_instances[session_id].think_and_respond = fake_think
 
     resp = client.post(
         "/api/send_message",

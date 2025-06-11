@@ -1,11 +1,10 @@
 """Tests for the refactored chat engine."""
 
-import asyncio
 import json
-from typing import Any, Dict, List, Optional
+from typing import Dict, List, Optional
 
 import pytest
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
 from core.chat_v2 import (
     RecursiveThinkingEngine,
