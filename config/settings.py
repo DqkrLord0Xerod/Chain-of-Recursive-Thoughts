@@ -4,7 +4,9 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
 
+    llm_provider: str = "openrouter"
     openrouter_api_key: str | None = None
+    openai_api_key: str | None = None
     model: str = "mistralai/mistral-small-3.1-24b-instruct:free"
     api_base_url: str = "https://openrouter.ai/api/v1/chat/completions"
     embed_url: str = "https://openrouter.ai/api/v1/embeddings"

@@ -77,6 +77,7 @@ class DatabaseSettings(BaseSettings):
 class LLMSettings(BaseSettings):
     """LLM provider settings."""
 
+    provider: str = Field("openrouter", env="LLM_PROVIDER")
     primary_provider: str = Field("openrouter", env="LLM_PRIMARY_PROVIDER")
     primary_model: str = Field(..., env="LLM_PRIMARY_MODEL")
     primary_api_key: SecretStr = Field(..., env="LLM_PRIMARY_API_KEY")
