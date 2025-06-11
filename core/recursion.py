@@ -1,34 +1,65 @@
 from __future__ import annotations
 
 from typing import Callable, Dict, List, Tuple
+from statistics import mean
 import re
 
 
+class TrendConvergenceStrategy:
+    """Strategy for detecting convergence using rolling trends."""
+
+    def __init__(
+        self,
+        similarity_threshold: float = 0.95,
+        improvement_threshold: float = 0.01,
+        oscillation_threshold: float = 0.95,
+        window: int = 3,
+    ) -> None:
+        self.similarity_threshold = similarity_threshold
+        self.improvement_threshold = improvement_threshold
+        self.oscillation_threshold = oscillation_threshold
+        self.window = window
+
+    def detect_plateau(self, scores: List[float]) -> bool:
+        """Return True if score improvements plateau based on moving averages."""
+        if len(scores) < self.window * 2:
+            return False
+        recent = scores[-self.window:]
+        previous = scores[-2 * self.window:-self.window]
+        recent_avg = mean(recent)
+        prev_avg = mean(previous)
+        return (recent_avg - prev_avg) < self.improvement_threshold
+
+
 class ConvergenceTracker:
-    """Track response quality to detect convergence or oscillation."""
+    """Track response quality using rolling statistics to detect convergence."""
 
     def __init__(
         self,
         similarity_fn: Callable[[str, str], float],
         score_fn: Callable[[str, str], float],
-        similarity_threshold: float = 0.95,
-        quality_threshold: float = 0.01,
-        oscillation_threshold: float = 0.95,
+        strategy: TrendConvergenceStrategy | None = None,
         history_size: int = 5,
     ) -> None:
         self.similarity_fn = similarity_fn
         self.score_fn = score_fn
-        self.similarity_threshold = similarity_threshold
-        self.quality_threshold = quality_threshold
-        self.oscillation_threshold = oscillation_threshold
+        self.strategy = strategy or TrendConvergenceStrategy()
         self.history_size = history_size
         self.history: List[Tuple[str, float]] = []
 
     def add(self, response: str, prompt: str) -> None:
+        """Add a response and its quality score to the history."""
         score = self.score_fn(response, prompt)
         self.history.append((response, score))
         if len(self.history) > self.history_size:
             self.history.pop(0)
+
+    @property
+    def rolling_average(self) -> float:
+        """Return the mean quality score of the recent history."""
+        if not self.history:
+            return 0.0
+        return mean(score for _, score in self.history)
 
     def update(self, response: str, prompt: str) -> Tuple[bool, str]:
         """Add a new response and immediately evaluate convergence."""
@@ -39,21 +70,21 @@ class ConvergenceTracker:
         if len(self.history) < 2:
             return True, "insufficient history"
 
-        prev_resp, prev_score = self.history[-2]
-        curr_resp, curr_score = self.history[-1]
+        prev_resp, _ = self.history[-2]
+        curr_resp, _ = self.history[-1]
 
         similarity = self.similarity_fn(prev_resp, curr_resp)
-        if similarity >= self.similarity_threshold:
+        if similarity >= self.strategy.similarity_threshold:
             return False, "converged"
 
-        improvement = curr_score - prev_score
-        if improvement < self.quality_threshold:
+        scores = [s for _, s in self.history]
+        if self.strategy.detect_plateau(scores):
             return False, "quality plateau"
 
         for old_resp, _ in self.history[:-2]:
             if (
                 self.similarity_fn(old_resp, curr_resp)
-                >= self.oscillation_threshold
+                >= self.strategy.oscillation_threshold
             ):
                 return False, "oscillation"
 
