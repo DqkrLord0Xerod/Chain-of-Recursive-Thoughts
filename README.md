@@ -1,14 +1,14 @@
-# 🧠 Multi-stage Intelligence Looping Framework (MILF)
+# 🧠 Multi-stage Intelligence Looping System (MILS)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-green.svg)](https://fastapi.tiangolo.com/)
 
-> MILF is a modular engine for recursively evaluating, refining, and selecting reasoning outputs across iterative stages. Originally forked from CoTR, MILF refactors the system into a modular, executable reasoning framework with multi-stage intelligence loops at its core.
+> MILS is a modular engine for recursively evaluating, refining, and selecting reasoning outputs across iterative stages. Originally forked from CoTR, MILS refactors the system into a modular, executable reasoning system with multi-stage intelligence loops at its core.
 
 ---
 
-## ✨ Features
+## 🚀 Features
 
 * 🔄 Recursive thinking loop with multi-pass self-correction
 * 🎯 Adaptive round depth based on prompt complexity
@@ -59,8 +59,8 @@ This enables:
 ## ⚡ Quick Start
 
 1. Clone & install
-   `git clone https://github.com/DqkrLord0Xerod/Chain-of-Recursive-Thoughts.git`
-   `cd Chain-of-Recursive-Thoughts`
+   `git clone https://github.com/DqkrLord0Xerod/Multistage-Intelligence-Looping-System.git`
+   `cd Multistage-Intelligence-Looping-System`
    `pip install -r requirements.txt`
 
 2. Configure
