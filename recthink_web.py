@@ -7,10 +7,15 @@ import json
 import os
 from datetime import datetime
 from typing import Optional
+from dataclasses import asdict
 import logging
 
 # Import the main RecThink class
-from core.chat import AsyncEnhancedRecursiveThinkingChat, CoRTConfig
+from core.chat_v2 import (
+    CoRTConfig,
+    create_default_engine,
+    RecursiveThinkingEngine,
+)
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -28,7 +33,7 @@ app.add_middleware(
 )
 
 # Create a dictionary to store engine instances
-engine_instances: dict[str, AsyncEnhancedRecursiveThinkingChat] = {}
+engine_instances: dict[str, RecursiveThinkingEngine] = {}
 
 
 # Pydantic models for request/response validation
@@ -57,10 +62,9 @@ async def initialize_chat(config: ChatConfig):
         session_id = f"session_{datetime.now().strftime('%Y%m%d%H%M%S')}_{os.urandom(4).hex()}"
         
         # Initialize the engine instance
-        engine = AsyncEnhancedRecursiveThinkingChat(
+        engine = create_default_engine(
             CoRTConfig(api_key=config.api_key, model=config.model)
         )
-        await engine.__aenter__()
         engine_instances[session_id] = engine
         
         return {"session_id": session_id, "status": "initialized"}
@@ -142,8 +146,7 @@ async def delete_session(session_id: str):
     if session_id not in engine_instances:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    engine = engine_instances.pop(session_id)
-    await engine.close()
+    engine_instances.pop(session_id)
     return {"status": "deleted", "session_id": session_id}
 
 
@@ -165,16 +168,15 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
             message_data = json.loads(data)
 
             if message_data["type"] == "message":
-                async for update in engine.stream_think_and_respond(message_data["content"]):
-                    if update.get("final"):
-                        await websocket.send_json({
-                            "type": "final",
-                            "response": update["response"],
-                            "thinking_rounds": update["thinking_rounds"],
-                            "thinking_history": update["thinking_history"],
-                        })
-                    else:
-                        await websocket.send_json({"type": "chunk", **update})
+                result = await engine.think_and_respond(message_data["content"])
+                await websocket.send_json({
+                    "type": "final",
+                    "response": result.response,
+                    "thinking_rounds": result.thinking_rounds,
+                    "thinking_history": [
+                        asdict(r) for r in result.thinking_history
+                    ],
+                })
 
     except WebSocketDisconnect:
         logger.info(f"WebSocket disconnected: {session_id}")

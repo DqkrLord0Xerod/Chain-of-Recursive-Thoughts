@@ -7,7 +7,7 @@ import random
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Awaitable, Callable, List, Optional, Type, TypeVar, Union
+from typing import Awaitable, Callable, List, Optional, Type, TypeVar
 
 import structlog
 

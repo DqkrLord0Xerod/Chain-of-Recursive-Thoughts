@@ -1,42 +1,44 @@
-import os
-import sys
+from typing import List, Dict
+import pytest
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))  # noqa: E402
-
-import asyncio  # noqa: E402
-from typing import List, Dict  # noqa: E402
-
-from core.resilient_provider import ResilientLLMProvider  # noqa: E402
-from core.interfaces import LLMProvider  # noqa: E402
-from exceptions import APIError, RateLimitError  # noqa: E402
+from core.providers.resilient_llm import ResilientLLMProvider
+from core.interfaces import LLMProvider, LLMResponse
+from core.providers.llm import StandardLLMResponse
+from exceptions import APIError, RateLimitError
 
 
 class FailingLLM(LLMProvider):
-    def __init__(self, exc):
+    def __init__(self, exc: Exception):
         self.exc = exc
 
-    async def chat(self, messages: List[Dict[str, str]], *, temperature: float = 0.7) -> str:
+    async def chat(
+        self, messages: List[Dict[str, str]], *, temperature: float = 0.7, **kwargs
+    ) -> LLMResponse:
         raise self.exc
 
 
 class SuccessLLM(LLMProvider):
-    async def chat(self, messages: List[Dict[str, str]], *, temperature: float = 0.7) -> str:
-        return "ok"
+    async def chat(
+        self, messages: List[Dict[str, str]], *, temperature: float = 0.7, **kwargs
+    ) -> LLMResponse:
+        return StandardLLMResponse(
+            content="ok",
+            usage={"total_tokens": 1},
+            model="success",
+        )
 
 
-def test_resilient_provider_uses_fallback():
+@pytest.mark.asyncio
+async def test_resilient_provider_uses_fallback():
     provider = ResilientLLMProvider(
-        FailingLLM(APIError("boom")), [SuccessLLM()]
+        [FailingLLM(APIError("boom")), SuccessLLM()]
     )
-    result = asyncio.run(provider.chat([{"role": "user", "content": "hi"}]))
-    assert result == "ok"
+    resp = await provider.chat([{"role": "user", "content": "hi"}])
+    assert resp.content == "ok"
 
 
-def test_resilient_provider_reraises():
-    provider = ResilientLLMProvider(FailingLLM(RateLimitError("limit")))
-    try:
-        asyncio.run(provider.chat([{"role": "user", "content": "hi"}]))
-    except RateLimitError:
-        assert True
-    else:
-        assert False
+@pytest.mark.asyncio
+async def test_resilient_provider_reraises():
+    provider = ResilientLLMProvider([FailingLLM(RateLimitError("limit"))])
+    with pytest.raises(RateLimitError):
+        await provider.chat([{"role": "user", "content": "hi"}])

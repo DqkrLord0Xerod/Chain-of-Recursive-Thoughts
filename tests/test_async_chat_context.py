@@ -1,19 +1,6 @@
-import os
-import sys
 import pytest
 
-ROOT = os.path.dirname(os.path.dirname(__file__))
-sys.path.insert(0, ROOT)
-import types  # noqa: E402
-cb_mod = types.ModuleType('cb')
-cb_mod.CircuitBreaker = type('CircuitBreaker', (), {})
-cb_mod.CircuitOpenError = type('CircuitOpenError', (Exception,), {})
-sys.modules.setdefault('core.resilience.circuit_breaker', cb_mod)
-
-import core.chat as chat  # noqa: E402
-
-AsyncEnhancedRecursiveThinkingChat = chat.AsyncEnhancedRecursiveThinkingChat
-CoRTConfig = chat.CoRTConfig
+from core.providers.llm import OpenRouterLLMProvider
 
 
 class DummySession:
@@ -26,9 +13,9 @@ class DummySession:
 
 @pytest.mark.asyncio
 async def test_context_closes_session(monkeypatch):
-    monkeypatch.setattr('aiohttp.ClientSession', lambda: DummySession())
+    monkeypatch.setattr('aiohttp.ClientSession', lambda *args, **kwargs: DummySession())
 
-    chat = AsyncEnhancedRecursiveThinkingChat(CoRTConfig(api_key='k', model='m'))
-    async with chat:
-        assert chat.llm_client.session is not None
-    assert chat.llm_client.session.closed
+    provider = OpenRouterLLMProvider(api_key='k', model='m')
+    async with provider as llm:
+        assert llm._session is not None
+    assert llm._session.closed
