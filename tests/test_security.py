@@ -18,7 +18,7 @@ from core.security.api_security import (
     ValidationError,
     RateLimitError,
 )
-from config.production import load_production_config
+from config.config import load_production_config
 
 
 class TestAPIKeyManager:
@@ -468,7 +468,7 @@ class TestProductionConfig:
                 
     def test_security_config_validation(self):
         """Test security configuration validation."""
-        from config.production import SecuritySettings
+        from config.config import SecuritySettings
         
         # Short secret should fail
         with pytest.raises(ValueError):

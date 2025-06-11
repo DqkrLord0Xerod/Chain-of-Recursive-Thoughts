@@ -4,8 +4,7 @@ from __future__ import annotations
 
 import os
 
-from .settings import Settings
-from .production import ProductionSettings, load_production_config
+from .config import Settings, ProductionSettings, load_production_config
 
 
 class Development(Settings):

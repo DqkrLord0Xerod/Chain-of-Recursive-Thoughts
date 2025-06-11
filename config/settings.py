@@ -1,18 +1,5 @@
-from pydantic_settings import BaseSettings
+"""Deprecated - use ``config.config`` instead."""
 
+from .config import Settings
 
-class Settings(BaseSettings):
-    """Application settings loaded from environment variables."""
-
-    llm_provider: str = "openrouter"
-    openrouter_api_key: str | None = None
-    openai_api_key: str | None = None
-    model: str = "mistralai/mistral-small-3.1-24b-instruct:free"
-    api_base_url: str = "https://openrouter.ai/api/v1/chat/completions"
-    embed_url: str = "https://openrouter.ai/api/v1/embeddings"
-    frontend_url: str = "http://localhost:3000"
-    ws_base_url: str = "ws://localhost:8000"
-
-    class Config:
-        env_file = ".env"
-        case_sensitive = False
+__all__ = ["Settings"]
