@@ -24,6 +24,8 @@ from core.providers import (
     InMemoryLRUCache,
     EnhancedQualityEvaluator,
 )
+from core.model_policy import ModelSelector
+from api import fetch_models
 from config import settings
 import tiktoken
 
@@ -60,7 +62,8 @@ class CoRTConfig:
     """Configuration for building a default thinking engine."""
 
     api_key: str | None = field(default_factory=lambda: settings.openrouter_api_key)
-    model: str = field(default_factory=lambda: settings.model)
+    model: str | None = field(default_factory=lambda: settings.model)
+    model_policy: Optional[Dict[str, str]] = None
     provider: str = field(default_factory=lambda: settings.llm_provider)
     max_context_tokens: int = 2000
     cache_size: int = 128
@@ -170,6 +173,7 @@ class RecursiveThinkingEngine:
         evaluator: QualityEvaluator,
         context_manager: ContextManager,
         thinking_strategy: ThinkingStrategy,
+        model_selector: Optional[ModelSelector] = None,
         metrics_recorder: Optional[MetricsRecorder] = None,
     ):
         self.llm = llm
@@ -177,6 +181,7 @@ class RecursiveThinkingEngine:
         self.evaluator = evaluator
         self.context_manager = context_manager
         self.thinking_strategy = thinking_strategy
+        self.model_selector = model_selector
         self.metrics_recorder = metrics_recorder
         self.conversation_history: List[Dict[str, str]] = []
         
@@ -213,7 +218,9 @@ class RecursiveThinkingEngine:
         )
         
         initial_response = await self._get_cached_response(
-            messages, temperature=temperature
+            messages,
+            temperature=temperature,
+            role="assistant",
         )
         
         current_best = initial_response.content
@@ -342,6 +349,7 @@ class RecursiveThinkingEngine:
         self,
         messages: List[Dict[str, str]],
         temperature: float,
+        role: str,
     ) -> LLMResponse:
         """Get response with caching."""
         
@@ -357,6 +365,9 @@ class RecursiveThinkingEngine:
             return cached
             
         # Call LLM
+        if self.model_selector:
+            self.llm.model = self.model_selector.model_for_role(role)
+
         response = await self.llm.chat(messages, temperature=temperature)
         
         # Cache the response
@@ -417,7 +428,11 @@ Respond in this JSON format:
             self.conversation_history + [{"role": "user", "content": batch_prompt}]
         )
         
-        response = await self._get_cached_response(messages, temperature)
+        response = await self._get_cached_response(
+            messages,
+            temperature,
+            role="critic",
+        )
         
         # Parse response
         try:
@@ -481,22 +496,37 @@ Respond in this JSON format:
 def create_default_engine(config: CoRTConfig) -> RecursiveThinkingEngine:
     """Convenience helper to build a thinking engine from a config."""
 
+    selector: Optional[ModelSelector] = None
+    default_model = config.model
+
+    if config.model_policy:
+        metadata = fetch_models()
+        selector = ModelSelector(metadata, config.model_policy)
+        default_model = selector.model_for_role("assistant")
+
     if config.provider.lower() == "openai":
         llm = OpenAILLMProvider(
             api_key=config.api_key or os.getenv("OPENAI_API_KEY"),
-            model=config.model,
+            model=default_model,
             max_retries=config.max_retries,
         )
     else:
         llm = OpenRouterLLMProvider(
             api_key=config.api_key or os.getenv("OPENROUTER_API_KEY"),
-            model=config.model,
+            model=default_model,
             max_retries=config.max_retries,
         )
 
     cache = InMemoryLRUCache(max_size=config.cache_size)
 
-    tokenizer = tiktoken.get_encoding("cl100k_base")
+    try:
+        tokenizer = tiktoken.get_encoding("cl100k_base")
+    except Exception:
+        class _SimpleTokenizer:
+            def encode(self, text: str) -> List[str]:
+                return text.split()
+
+        tokenizer = _SimpleTokenizer()
     context_manager = ContextManager(
         max_tokens=config.max_context_tokens,
         tokenizer=tokenizer,
@@ -512,4 +542,5 @@ def create_default_engine(config: CoRTConfig) -> RecursiveThinkingEngine:
         evaluator=evaluator,
         context_manager=context_manager,
         thinking_strategy=strategy,
+        model_selector=selector,
     )
