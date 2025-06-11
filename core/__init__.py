@@ -7,7 +7,7 @@ from .chat_v2 import (
     AdaptiveThinkingStrategy,
     create_default_engine,
 )
-from .recursion import ConvergenceTracker
+from .recursion import ConvergenceTracker, TrendConvergenceStrategy
 from .adaptive_reasoning import AdaptiveReasoner
 
 __all__ = [
@@ -16,5 +16,6 @@ __all__ = [
     "AdaptiveThinkingStrategy",
     "create_default_engine",
     "ConvergenceTracker",
+    "TrendConvergenceStrategy",
     "AdaptiveReasoner",
 ]
