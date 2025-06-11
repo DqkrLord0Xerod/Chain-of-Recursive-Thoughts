@@ -464,8 +464,76 @@ class HybridCacheProvider:
 
 # Redis cache provider would go here for production use
 class RedisCacheProvider:
-    """Redis-based cache provider (placeholder for full implementation)."""
-    
-    def __init__(self, redis_url: str, **kwargs):
-        # Would use aioredis in production
-        raise NotImplementedError("Redis cache provider requires aioredis")
+    """Redis-based cache provider using aioredis."""
+
+    def __init__(self, redis_url: str, *, namespace: str = "cort") -> None:
+        self.redis_url = redis_url
+        self.namespace = namespace
+        import aioredis  # imported lazily for testability
+
+        self.redis = aioredis.from_url(redis_url)
+
+    def _key(self, key: str) -> str:
+        return f"{self.namespace}:{key}"
+
+    def _tag_set(self, tag: str) -> str:
+        return f"{self.namespace}:tag:{tag}"
+
+    def _key_tags(self, key: str) -> str:
+        return f"{self.namespace}:tags:{key}"
+
+    async def get(self, key: str) -> Optional[Any]:
+        data = await self.redis.get(self._key(key))
+        if data is None:
+            return None
+        try:
+            return pickle.loads(data)
+        except Exception as e:  # pragma: no cover - defensive
+            logger.warning("Failed to deserialize cache entry", error=str(e))
+            return None
+
+    async def set(
+        self,
+        key: str,
+        value: Any,
+        *,
+        ttl: Optional[int] = None,
+        tags: Optional[List[str]] = None,
+    ) -> None:
+        data = pickle.dumps(value)
+        await self.redis.set(self._key(key), data, ex=ttl)
+        if tags:
+            await self.redis.sadd(self._key_tags(key), *tags)
+            if ttl:
+                await self.redis.expire(self._key_tags(key), ttl)
+            for tag in tags:
+                await self.redis.sadd(self._tag_set(tag), key)
+
+    async def delete(self, key: str) -> None:
+        tags = await self.redis.smembers(self._key_tags(key))
+        for tag in tags:
+            await self.redis.srem(self._tag_set(tag), key)
+        await self.redis.delete(self._key_tags(key))
+        await self.redis.delete(self._key(key))
+
+    async def clear(self, *, tag: Optional[str] = None) -> int:
+        if tag is None:
+            await self.redis.flushdb()
+            return 0
+        keys = await self.redis.smembers(self._tag_set(tag))
+        count = 0
+        for key in keys:
+            await self.delete(key)
+            count += 1
+        await self.redis.delete(self._tag_set(tag))
+        return count
+
+    async def stats(self) -> Dict[str, Any]:
+        size = await self.redis.dbsize()
+        info = await self.redis.info(section="memory")
+        return {
+            "type": "redis",
+            "url": self.redis_url,
+            "entry_count": size,
+            "used_memory": info.get("used_memory", 0),
+        }

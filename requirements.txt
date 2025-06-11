@@ -14,3 +14,4 @@ aiohttp
 opentelemetry-sdk
 opentelemetry-exporter-prometheus
 aiofiles
+aioredis
