@@ -1,14 +1,14 @@
-# 🧠 Recursive Evaluation Framework (REF)
+# 🧠 Multi-stage Intelligence Looping Framework (MILF)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-green.svg)](https://fastapi.tiangolo.com/)
 
-> REF is a modular engine for recursively evaluating, refining, and selecting reasoning outputs across iterative stages. Originally forked from CoTR, REF refactors the system into a modular, executable reasoning framework with recursive evaluation at its core.
+> MILF is a modular engine for recursively evaluating, refining, and selecting reasoning outputs across iterative stages. Originally forked from CoTR, MILF refactors the system into a modular, executable reasoning framework with multi-stage intelligence loops at its core.
 
 ---
 
-## 🚀 Features
+## ✨ Features
 
 * 🔄 Recursive thinking loop with multi-pass self-correction
 * 🎯 Adaptive round depth based on prompt complexity
@@ -82,31 +82,31 @@ graph TB
         A[FastAPI Server] --> B[WebSocket Handler]
         A --> C[REST Endpoints]
     end
-    
+
     subgraph "Core Engine"
         D[RecursiveThinkingEngine] --> E[ThinkingStrategy]
         D --> F[ContextManager]
         D --> G[QualityEvaluator]
     end
-    
+
     subgraph "Provider Layer"
         H[LLMProvider] --> I[OpenRouter]
         H --> J[Fallback Providers]
         K[CacheProvider] --> L[Memory/Disk/Redis]
     end
-    
+
     subgraph "Resilience"
         M[CircuitBreaker] --> H
         N[RetryPolicy] --> H
         O[HedgingExecutor] --> H
     end
-    
+
     subgraph "Observability"
         P[OpenTelemetry] --> Q[Prometheus]
         P --> R[Jaeger]
         S[MetricsAnalyzer] --> T[Grafana]
     end
-    
+
     C --> D
     B --> D
     D --> H
