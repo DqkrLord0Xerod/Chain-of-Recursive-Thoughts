@@ -1,18 +1,20 @@
 
 """High-level chat framework."""
 
-from .chat import (
+from .chat_v2 import (
     CoRTConfig,
-    EnhancedRecursiveThinkingChat,
-    AsyncEnhancedRecursiveThinkingChat,
+    RecursiveThinkingEngine,
+    AdaptiveThinkingStrategy,
+    create_default_engine,
 )
 from .recursion import ConvergenceTracker
 from .adaptive_reasoning import AdaptiveReasoner
 
 __all__ = [
     "CoRTConfig",
-    "EnhancedRecursiveThinkingChat",
-    "AsyncEnhancedRecursiveThinkingChat",
+    "RecursiveThinkingEngine",
+    "AdaptiveThinkingStrategy",
+    "create_default_engine",
     "ConvergenceTracker",
     "AdaptiveReasoner",
 ]
