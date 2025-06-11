@@ -8,6 +8,7 @@ import json
 import logging
 import os
 import random
+import aiohttp
 import re
 import time
 from dataclasses import dataclass, field
@@ -413,6 +414,14 @@ class AsyncEnhancedRecursiveThinkingChat(EnhancedRecursiveThinkingChat):
     def __init__(self, config: CoRTConfig, max_connections: int = 5) -> None:
         super().__init__(config)
         self.semaphore = asyncio.Semaphore(max_connections)
+
+    async def __aenter__(self) -> "AsyncEnhancedRecursiveThinkingChat":
+        if self.llm_client.session is None:
+            self.llm_client.session = aiohttp.ClientSession()
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
+        await self.close()
 
     async def close(self) -> None:
         await self.llm_client.close()
