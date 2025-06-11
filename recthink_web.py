@@ -10,11 +10,7 @@ from typing import Optional
 import logging
 
 # Import the main RecThink class
-from core.chat_v2 import (
-    CoRTConfig,
-    create_default_engine,
-    RecursiveThinkingEngine,
-)
+from core.chat import AsyncEnhancedRecursiveThinkingChat, CoRTConfig
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -32,7 +28,7 @@ app.add_middleware(
 )
 
 # Create a dictionary to store engine instances
-engine_instances: dict[str, RecursiveThinkingEngine] = {}
+engine_instances: dict[str, AsyncEnhancedRecursiveThinkingChat] = {}
 
 
 # Pydantic models for request/response validation
@@ -61,9 +57,10 @@ async def initialize_chat(config: ChatConfig):
         session_id = f"session_{datetime.now().strftime('%Y%m%d%H%M%S')}_{os.urandom(4).hex()}"
         
         # Initialize the engine instance
-        engine = create_default_engine(
+        engine = AsyncEnhancedRecursiveThinkingChat(
             CoRTConfig(api_key=config.api_key, model=config.model)
         )
+        await engine.__aenter__()
         engine_instances[session_id] = engine
         
         return {"session_id": session_id, "status": "initialized"}
@@ -145,7 +142,8 @@ async def delete_session(session_id: str):
     if session_id not in engine_instances:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    del engine_instances[session_id]
+    engine = engine_instances.pop(session_id)
+    await engine.close()
     return {"status": "deleted", "session_id": session_id}
 
 
