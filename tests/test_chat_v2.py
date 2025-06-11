@@ -97,12 +97,12 @@ class TestRecursiveThinkingEngine:
             json.dumps({
                 "alternatives": ["Alt 1", "Alt 2"],
                 "selection": "1",
-                "reasoning": "Alt 1 is better",
+                "thinking": "Alt 1 is better",
             }),
             json.dumps({
                 "alternatives": ["Alt 3", "Alt 4"],
                 "selection": "current",
-                "reasoning": "Current is best",
+                "thinking": "Current is best",
             }),
         ])
         
@@ -315,7 +315,7 @@ class TestIntegration:
                     "2": {"score": 7, "strengths": "Creative", "weaknesses": "Unclear"},
                 },
                 "selection": "1",
-                "reasoning": "The detailed analysis provides more value",
+                "thinking": "The detailed analysis provides more value",
             }),
         ])
         

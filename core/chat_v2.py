@@ -410,7 +410,7 @@ Respond in this JSON format:
         "2": {{"score": 0-10, "strengths": "...", "weaknesses": "..."}}
     }},
     "selection": "current" or "1" or "2",
-    "reasoning": "Why this option is best"
+    "thinking": "Why this option is best"
 }}"""
 
         messages = self.context_manager.optimize(
@@ -424,7 +424,7 @@ Respond in this JSON format:
             data = json.loads(response.content)
             alternatives = data.get("alternatives", [])[:num_alternatives]
             selection = data.get("selection", "current")
-            reasoning = data.get("reasoning", "No reasoning provided")
+            thinking = data.get("thinking", "No thinking provided")
             
             # Determine selected response
             if selection == "current":
@@ -441,9 +441,9 @@ Respond in this JSON format:
             # Fallback: treat response as single alternative
             alternatives = [response.content]
             best = response.content
-            reasoning = "JSON parsing failed, using raw response"
-            
-        return best, alternatives, reasoning, response.usage["total_tokens"]
+            thinking = "JSON parsing failed, using raw response"
+
+        return best, alternatives, thinking, response.usage["total_tokens"]
         
     async def clear_history(self) -> None:
         """Clear conversation history."""

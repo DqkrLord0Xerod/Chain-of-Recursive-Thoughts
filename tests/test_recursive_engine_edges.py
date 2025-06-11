@@ -60,7 +60,7 @@ async def test_invalid_json_alternative():
 
 @pytest.mark.asyncio
 async def test_selection_out_of_range():
-    invalid = '{"alternatives": ["a"], "selection": "2", "reasoning": "pick second"}'
+    invalid = '{"alternatives": ["a"], "selection": "2", "thinking": "pick second"}'
     llm = DummyLLM(["initial", invalid])
     engine = RecursiveThinkingEngine(
         llm=llm,

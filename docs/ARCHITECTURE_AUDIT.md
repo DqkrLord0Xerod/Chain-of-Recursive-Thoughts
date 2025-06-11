@@ -2,7 +2,7 @@
 
 ## Executive Summary
 
-The repository implements an interesting recursive reasoning architecture, but suffers from architectural issues like tight coupling, circular dependencies, poor error handling, and inefficient resource usage. The concept is sound, but the implementation needs refactoring for production readiness.
+The repository implements an interesting recursive thinking architecture, but suffers from architectural issues like tight coupling, circular dependencies, poor error handling, and inefficient resource usage. The concept is sound, but the implementation needs refactoring for production readiness.
 
 The current API is served by `recthink_web_v2.py` and offers `/chat` and WebSocket endpoints for streaming updates. Providers include both OpenRouter and OpenAI implementations with a resilient wrapper.
 
@@ -14,7 +14,7 @@ The current API is served by `recthink_web_v2.py` and offers `/chat` and WebSock
 
 ### 2. Recursive Algorithm Inefficiencies
 - Currently regenerates alternatives each round without adaptive stopping.
-- Implement an adaptive reasoner with early stopping and parallel generation.
+- Implement an adaptive thinking agent with early stopping and parallel generation.
 
 ### 3. Poor Error Handling & Resilience
 - Add a resilient provider wrapper to handle failures and circuit breaking.
@@ -31,6 +31,6 @@ The current API is served by `recthink_web_v2.py` and offers `/chat` and WebSock
 ## Priority Implementation Roadmap
 
 1. **Critical Fixes**: refactor core class, add resilience, monitoring, and tests.
-2. **Performance Optimization**: adaptive reasoning and improved context management.
+2. **Performance Optimization**: adaptive thinking and improved context management.
 3. **Production Readiness**: documentation, configuration management, and deployment optimization.
 

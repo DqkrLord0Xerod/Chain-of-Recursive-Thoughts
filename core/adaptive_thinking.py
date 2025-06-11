@@ -8,24 +8,24 @@ from core.interfaces import LLMProvider, QualityEvaluator
 
 
 @dataclass
-class ReasoningState:
+class ThinkingState:
     current_best: str
     confidence: float
     history: List[float] = field(default_factory=list)
     stability_count: int = 0
 
 
-class AdaptiveReasoner:
+class AdaptiveThinkingAgent:
     """Iteratively improve a response with adaptive stopping."""
 
     def __init__(self, llm: LLMProvider, evaluator: QualityEvaluator) -> None:
         self.llm = llm
         self.evaluator = evaluator
 
-    async def reason(self, prompt: str, *, max_rounds: int = 5) -> str:
+    async def think(self, prompt: str, *, max_rounds: int = 5) -> str:
         initial = await self.llm.chat([{"role": "user", "content": prompt}])
         score = self.evaluator.score(initial, prompt)
-        state = ReasoningState(initial, score, [score])
+        state = ThinkingState(initial, score, [score])
 
         for _ in range(1, max_rounds + 1):
             if state.confidence > 0.95 and state.stability_count >= 2:
