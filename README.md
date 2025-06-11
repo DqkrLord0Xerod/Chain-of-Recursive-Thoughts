@@ -32,11 +32,12 @@ npm start
 ```
 
 ### WebSocket streaming
-The backend exposes a WebSocket endpoint for progressive updates.
-Connect to `/ws/{session_id}` after initializing a session.
-Each update has `type: "chunk"` with a partial response.
-When processing completes the server sends `type: "final"` with the
-full thinking history.
+Two WebSocket endpoints are available:
+
+1. `/ws/{session_id}` – returns a single message with the final result.
+2. `/ws/stream/{session_id}` – streams updates from `think_stream`.
+   Send `{"message": "your prompt"}` and you'll receive JSON objects
+   with `stage`, `response` and `quality` for each update.
 
 ## Try it yourself
 ### CLI usage

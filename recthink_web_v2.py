@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict
-from typing import Dict, Optional
+from typing import Dict, Optional, List
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -100,6 +100,47 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                     "thinking_history": [asdict(r) for r in result.thinking_history],
                 }
             )
+    except WebSocketDisconnect:
+        pass
+    finally:
+        await websocket.close()
+
+
+@app.websocket("/ws/stream/{session_id}")
+async def websocket_stream(websocket: WebSocket, session_id: str):
+    """Stream thinking updates using think_stream."""
+    await websocket.accept()
+
+    if session_id not in chat_sessions:
+        chat_sessions[session_id] = create_default_engine(CoRTConfig())
+
+    engine = chat_sessions[session_id]
+
+    try:
+        while True:
+            data = await websocket.receive_text()
+            try:
+                payload = json.loads(data)
+                message = payload.get("message")
+                context = payload.get("context")
+            except json.JSONDecodeError:
+                await websocket.send_json({"error": "Invalid JSON"})
+                continue
+
+            try:
+                async for update in engine.think_stream(
+                    message,
+                    context=context,
+                ):
+                    await websocket.send_json(
+                        {
+                            "stage": update.get("stage"),
+                            "response": update.get("response"),
+                            "quality": update.get("quality"),
+                        }
+                    )
+            except Exception as exc:
+                await websocket.send_json({"error": str(exc)})
     except WebSocketDisconnect:
         pass
     finally:
