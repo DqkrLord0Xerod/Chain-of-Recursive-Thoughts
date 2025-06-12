@@ -88,3 +88,18 @@ def test_websocket_stream_order(monkeypatch):
         updates = [ws.receive_json() for _ in range(2)]
         stages = [u["stage"] for u in updates]
         assert stages == ["start", "end"]
+
+
+def test_provider_health_endpoint(monkeypatch):
+    client = TestClient(recthink_web_v2.app)
+
+    class DummyAnalyzer:
+        def get_provider_health(self):
+            return [{"provider": "p1", "status": "healthy"}]
+
+    monkeypatch.setattr(recthink_web_v2, "metrics_analyzer", DummyAnalyzer())
+
+    resp = client.get("/health/providers")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["providers"][0]["provider"] == "p1"

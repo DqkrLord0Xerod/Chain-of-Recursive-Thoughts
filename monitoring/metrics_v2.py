@@ -350,6 +350,25 @@ class MetricsAnalyzer:
         """Record provider error."""
         self.provider_errors[provider] += 1
 
+    def record_provider_failure(self, provider: str, error: str) -> None:
+        """Alias for record_provider_error for clarity."""
+        self.record_provider_error(provider, error)
+
+    def get_provider_health(self) -> List[Dict[str, Any]]:
+        """Return health status for providers."""
+        stats = self.get_provider_stats()
+        health = []
+        for provider, data in stats.items():
+            reliability = data.get("reliability", 0)
+            if reliability > 0.95:
+                status = "healthy"
+            elif reliability > 0.8:
+                status = "degraded"
+            else:
+                status = "unhealthy"
+            health.append({"provider": provider, "status": status, **data})
+        return health
+
     def get_recommendations(self) -> List[Dict[str, Any]]:
         """Get system optimization recommendations."""
         recommendations = []

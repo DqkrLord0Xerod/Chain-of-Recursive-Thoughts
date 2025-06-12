@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict
-from typing import Dict, Optional
+from typing import Dict, Optional, List
+
+import structlog
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -13,6 +15,7 @@ from core.recursive_engine_v2 import (
     OptimizedRecursiveEngine,
     create_optimized_engine,
 )
+from monitoring.metrics_v2 import MetricsAnalyzer
 
 app = FastAPI(title="RecThink API v2")
 
@@ -24,8 +27,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+logger = structlog.get_logger(__name__)
+
 # Global store for chat engines per session
 chat_sessions: Dict[str, "OptimizedRecursiveEngine"] = {}
+metrics_analyzer = MetricsAnalyzer()
 
 
 class ChatRequest(BaseModel):
@@ -103,6 +109,14 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
         pass
     finally:
         await websocket.close()
+
+
+@app.get("/health/providers")
+async def provider_health() -> Dict[str, List[Dict[str, object]]]:
+    """Return health information for LLM providers."""
+    health = metrics_analyzer.get_provider_health()
+    logger.info("provider_health_status", providers=health)
+    return {"providers": health}
 
 
 @app.websocket("/ws/stream/{session_id}")
