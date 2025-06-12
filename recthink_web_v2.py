@@ -16,11 +16,9 @@ from core.recursive_engine_v2 import (
     OptimizedRecursiveEngine,
     create_optimized_engine,
 )
-codex/add-metrics-analyzer-endpoint-and-tests
 from monitoring.metrics_v2 import MetricsAnalyzer, ThinkingMetrics
 from monitoring.telemetry import initialize_telemetry
 from config.config import load_production_config
-main
 
 app = FastAPI(title="RecThink API v2")
 

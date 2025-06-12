@@ -24,6 +24,7 @@ from core.providers import (
     OpenAILLMProvider,
     InMemoryLRUCache,
     EnhancedQualityEvaluator,
+    OpenRouterEmbeddingProvider,
 )
 from core.planning import ImprovementPlanner
 from core.model_policy import ModelSelector
@@ -31,6 +32,7 @@ from core.budget import BudgetManager
 from core.cache_manager import CacheManager
 from core.metrics_manager import MetricsManager
 from core.conversation import ConversationManager
+from core.memory import FaissMemoryStore
 from api import fetch_models
 from config import settings
 import tiktoken
@@ -73,6 +75,8 @@ class CoRTConfig:
     model: str | None = field(default_factory=lambda: settings.model)
     model_policy: Optional[Dict[str, str]] = None
     provider: str = field(default_factory=lambda: settings.llm_provider)
+    providers: Optional[List[str]] = None
+    provider_weights: Optional[List[float]] = None
     max_context_tokens: int = 2000
     cache_size: int = 128
     max_retries: int = 3
@@ -80,6 +84,8 @@ class CoRTConfig:
     enable_parallel_thinking: bool = True
     thinking_strategy: str = "adaptive"
     quality_thresholds: Optional[Dict[str, float]] = None
+    memory_dim: int = 1536
+    memory_top_k: int = 3
 
 
 class RecursiveThinkingEngine:
@@ -101,6 +107,7 @@ class RecursiveThinkingEngine:
         budget_manager: Optional["BudgetManager"] = None,
         conversation_manager: Optional[ConversationManager] = None,
         planner: Optional["ImprovementPlanner"] = None,
+        memory_store: Optional["FaissMemoryStore"] = None,
     ) -> None:
         self.llm = llm
         self.cache = cache
@@ -126,6 +133,7 @@ class RecursiveThinkingEngine:
             budget_manager=budget_manager,
         )
         self.planner = planner
+        self.memory_store = memory_store
         
     async def think_and_respond(
         self,
@@ -159,8 +167,12 @@ class RecursiveThinkingEngine:
         logger.info("thinking_rounds_determined", rounds=thinking_rounds)
         
         # Get initial response
+        memory_context = []
+        if self.memory_store:
+            memory_context = await self.memory_store.retrieve_messages(user_input)
+
         messages = self.context_manager.optimize(
-            self.conversation.get() + [{"role": "user", "content": user_input}]
+            memory_context + self.conversation.get() + [{"role": "user", "content": user_input}]
         )
         
         initial_response = await self.cache_manager.chat(
@@ -352,8 +364,12 @@ Respond in this JSON format:
     "thinking": "Why this option is best"
 }}"""
 
+        memory_context = []
+        if self.memory_store:
+            memory_context = await self.memory_store.retrieve_messages(prompt)
+
         messages = self.context_manager.optimize(
-            self.conversation.get() + [{"role": "user", "content": batch_prompt}]
+            memory_context + self.conversation.get() + [{"role": "user", "content": batch_prompt}]
         )
         
         response = await self.cache_manager.chat(
@@ -448,6 +464,15 @@ def create_default_engine(config: CoRTConfig) -> RecursiveThinkingEngine:
     )
     planner = ImprovementPlanner(llm)
 
+    embedding_provider = OpenRouterEmbeddingProvider(
+        api_key=config.api_key or os.getenv("OPENROUTER_API_KEY"),
+    )
+    memory_store = FaissMemoryStore(
+        embedding_provider,
+        config.memory_dim,
+        top_k=config.memory_top_k,
+    )
+
     return RecursiveThinkingEngine(
         llm=llm,
         cache=cache,
@@ -461,4 +486,5 @@ def create_default_engine(config: CoRTConfig) -> RecursiveThinkingEngine:
         budget_manager=budget,
         conversation_manager=conversation_manager,
         planner=planner,
+        memory_store=memory_store,
     )
