@@ -471,7 +471,8 @@ class RedisCacheProvider:
         self.namespace = namespace
         import aioredis  # imported lazily for testability
 
-        self.redis = aioredis.from_url(redis_url)
+        self.pool = aioredis.ConnectionPool.from_url(redis_url)
+        self.redis = aioredis.Redis(connection_pool=self.pool)
 
     def _key(self, key: str) -> str:
         return f"{self.namespace}:{key}"
@@ -508,6 +509,8 @@ class RedisCacheProvider:
                 await self.redis.expire(self._key_tags(key), ttl)
             for tag in tags:
                 await self.redis.sadd(self._tag_set(tag), key)
+                if ttl:
+                    await self.redis.expire(self._tag_set(tag), ttl)
 
     async def delete(self, key: str) -> None:
         tags = await self.redis.smembers(self._key_tags(key))
@@ -537,3 +540,11 @@ class RedisCacheProvider:
             "entry_count": size,
             "used_memory": info.get("used_memory", 0),
         }
+
+    async def ping(self) -> bool:
+        try:
+            await self.redis.ping()
+            return True
+        except Exception as e:  # pragma: no cover - best effort
+            logger.warning("Redis ping failed", error=str(e))
+            return False
