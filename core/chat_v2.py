@@ -30,6 +30,7 @@ from core.budget import BudgetManager
 from core.cache_manager import CacheManager
 from core.metrics_manager import MetricsManager
 from core.conversation import ConversationManager
+from core.tools import ToolRegistry, SearchTool, PythonExecutionTool
 from api import fetch_models
 from config import settings
 import tiktoken
@@ -77,6 +78,7 @@ class CoRTConfig:
     max_retries: int = 3
     budget_token_limit: int = 100000
     enable_parallel_thinking: bool = True
+    enable_tools: bool = True
     thinking_strategy: str = "adaptive"
     quality_thresholds: Optional[Dict[str, float]] = None
 
@@ -99,6 +101,7 @@ class RecursiveThinkingEngine:
         metrics_recorder: Optional[MetricsRecorder] = None,
         budget_manager: Optional["BudgetManager"] = None,
         conversation_manager: Optional[ConversationManager] = None,
+        tools: Optional[ToolRegistry] = None,
     ) -> None:
         self.llm = llm
         self.cache = cache
@@ -123,6 +126,14 @@ class RecursiveThinkingEngine:
             context_manager,
             budget_manager=budget_manager,
         )
+        self.tools = tools or ToolRegistry()
+
+        if hasattr(self.thinking_strategy, "set_tools"):
+            self.thinking_strategy.set_tools(self.tools)
+
+    async def run_tool(self, name: str, task: str) -> str:
+        """Execute a registered tool."""
+        return await self.tools.run(name, task)
         
     async def think_and_respond(
         self,
@@ -148,6 +159,11 @@ class RecursiveThinkingEngine:
             override_rounds=thinking_rounds,
             metadata=metadata,
         )
+
+        if hasattr(self.thinking_strategy, "preprocess_prompt"):
+            user_input = await self.thinking_strategy.preprocess_prompt(
+                user_input, self
+            )
         
         # Determine number of rounds
         if thinking_rounds is None:
@@ -426,6 +442,12 @@ def create_default_engine(config: CoRTConfig) -> RecursiveThinkingEngine:
     strategy = load_strategy(config.thinking_strategy, llm, evaluator)
     convergence = ConvergenceStrategy(evaluator.score, evaluator.score)
 
+    tools = None
+    if config.enable_tools:
+        tools = ToolRegistry()
+        tools.register(SearchTool())
+        tools.register(PythonExecutionTool())
+
     budget = BudgetManager(default_model, token_limit=config.budget_token_limit)
     cache_manager = CacheManager(
         llm,
@@ -452,4 +474,5 @@ def create_default_engine(config: CoRTConfig) -> RecursiveThinkingEngine:
         metrics_manager=metrics_manager,
         budget_manager=budget,
         conversation_manager=conversation_manager,
+        tools=tools,
     )
