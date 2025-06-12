@@ -19,6 +19,7 @@ const RecursiveThinkingInterface = () => {
     error,
     showThinkingProcess,
     connectionStatus,
+    cost,
     
     setApiKey,
     setModel,
@@ -27,10 +28,11 @@ const RecursiveThinkingInterface = () => {
     setShowThinkingProcess,
     setBudgetCap,
     setEnforceBudget,
-    
+
     initializeChat,
     sendMessage,
-    saveConversation
+    saveConversation,
+    finalizeSession
   } = useRecThink();
   
   const [input, setInput] = useState('');
@@ -230,18 +232,32 @@ const RecursiveThinkingInterface = () => {
           </div>
           
           <div className="flex items-center">
-            {sessionId && (
-              <div className="flex items-center text-sm mr-4">
-                <span className={`inline-block w-2 h-2 mr-1 rounded-full ${
-                  connectionStatus === 'connected' ? 'bg-green-500' : 
-                  connectionStatus === 'error' ? 'bg-red-500' : 'bg-gray-500'
-                }`}></span>
-                <span className="text-gray-600">
-                  {connectionStatus === 'connected' ? 'Connected' : 
-                   connectionStatus === 'error' ? 'Connection error' : 'Disconnected'}
-                </span>
+          {sessionId && (
+            <div className="flex items-center text-sm mr-4">
+              <span className={`inline-block w-2 h-2 mr-1 rounded-full ${
+                connectionStatus === 'connected' ? 'bg-green-500' :
+                connectionStatus === 'error' ? 'bg-red-500' : 'bg-gray-500'
+              }`}></span>
+              <span className="text-gray-600">
+                {connectionStatus === 'connected' ? 'Connected' :
+                 connectionStatus === 'error' ? 'Connection error' : 'Disconnected'}
+              </span>
+            </div>
+          )}
+
+          {sessionId && (
+            <div className="flex items-center mr-4 w-32">
+              <div className="flex-1 bg-gray-200 rounded h-2 mr-2 overflow-hidden">
+                <div
+                  className="bg-blue-500 h-2"
+                  style={{ width: `${(cost.tokensUsed / cost.tokenLimit) * 100}%` }}
+                ></div>
               </div>
-            )}
+              <span className="text-xs text-gray-600">
+                ${cost.dollarsSpent.toFixed(4)}
+              </span>
+            </div>
+          )}
             
             <button 
               className="flex items-center text-sm text-gray-600 hover:text-blue-600 mr-4"
@@ -252,12 +268,20 @@ const RecursiveThinkingInterface = () => {
               Thinking rounds: {thinkingProcess ? thinkingProcess.rounds : '?'}
             </button>
             
-            <button 
+            <button
               className="flex items-center text-sm bg-gray-100 hover:bg-gray-200 px-3 py-1 rounded"
               onClick={() => setActiveTab('settings')}
             >
               <Settings size={14} className="mr-1" />
               Settings
+            </button>
+
+            <button
+              className="ml-2 text-sm bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded"
+              onClick={finalizeSession}
+              disabled={!sessionId}
+            >
+              Stop &amp; Finalize
             </button>
           </div>
         </header>
