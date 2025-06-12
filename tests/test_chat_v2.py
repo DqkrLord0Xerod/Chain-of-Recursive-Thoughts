@@ -14,6 +14,7 @@ from core.chat_v2 import (
 )
 from core.providers.cache import InMemoryLRUCache
 from core.context_manager import ContextManager
+from core.recursion import ConvergenceStrategy
 
 
 # Mock implementations for testing
@@ -119,15 +120,20 @@ class TestRecursiveThinkingEngine:
             max_tokens=1000,
             tokenizer=mock_tokenizer,
         )
-        
+
         strategy = MockThinkingStrategy(rounds=2, should_continue_until=2)
-        
+        convergence = ConvergenceStrategy(
+            lambda a, b: evaluator.score(a, b),
+            evaluator.score,
+        )
+
         engine = RecursiveThinkingEngine(
             llm=llm,
             cache=cache,
             evaluator=evaluator,
             context_manager=context_manager,
             thinking_strategy=strategy,
+            convergence_strategy=convergence,
             model_selector=None,
         )
         
@@ -341,13 +347,18 @@ class TestIntegration:
             quality_threshold=0.9,
             improvement_threshold=0.05,
         )
-        
+        convergence = ConvergenceStrategy(
+            lambda a, b: evaluator.score(a, b),
+            evaluator.score,
+        )
+
         engine = RecursiveThinkingEngine(
             llm=llm,
             cache=cache,
             evaluator=evaluator,
             context_manager=context_manager,
             thinking_strategy=strategy,
+            convergence_strategy=convergence,
             model_selector=None,
         )
         
@@ -390,13 +401,18 @@ class TestIntegration:
         
         context_manager = ContextManager(100, mock_tokenizer)
         strategy = MockThinkingStrategy(rounds=1)
-        
+        convergence = ConvergenceStrategy(
+            lambda a, b: evaluator.score(a, b),
+            evaluator.score,
+        )
+
         engine = RecursiveThinkingEngine(
             llm=llm,
             cache=cache,
             evaluator=evaluator,
             context_manager=context_manager,
             thinking_strategy=strategy,
+            convergence_strategy=convergence,
             model_selector=None,
         )
         
@@ -415,6 +431,7 @@ class TestIntegration:
             evaluator=evaluator,
             context_manager=context_manager,
             thinking_strategy=strategy,
+            convergence_strategy=convergence,
             model_selector=None,
         )
         
