@@ -7,6 +7,7 @@ from core.chat_v2 import RecursiveThinkingEngine  # noqa: E402
 from core.context_manager import ContextManager  # noqa: E402
 from core.providers.cache import InMemoryLRUCache  # noqa: E402
 from core.interfaces import LLMProvider, QualityEvaluator  # noqa: E402
+from core.recursion import ConvergenceStrategy  # noqa: E402
 
 
 class DummyLLM(LLMProvider):
@@ -51,6 +52,7 @@ async def test_invalid_json_alternative():
         evaluator=DummyEvaluator(),
         context_manager=ContextManager(100, type("T", (), {"encode": lambda self, t: t.split()})()),
         thinking_strategy=NoOpStrategy(),
+        convergence_strategy=ConvergenceStrategy(lambda a, b: 0.0, lambda r, p: 0.0),
         model_selector=None,
     )
 
@@ -69,6 +71,7 @@ async def test_selection_out_of_range():
         evaluator=DummyEvaluator(),
         context_manager=ContextManager(100, type("T", (), {"encode": lambda self, t: t.split()})()),
         thinking_strategy=NoOpStrategy(),
+        convergence_strategy=ConvergenceStrategy(lambda a, b: 0.0, lambda r, p: 0.0),
         model_selector=None,
     )
 

@@ -30,11 +30,11 @@ from core.optimization.parallel_thinking import (
     AdaptiveThinkingOptimizer,
 )
 from core.prompt_evolution import evolve_prompt
+from core.recursion import ConvergenceStrategy
 from monitoring.telemetry import trace_method, record_thinking_metrics
 
 
 logger = structlog.get_logger(__name__)
-
 
 class OptimizedRecursiveEngine:
     """
@@ -59,10 +59,15 @@ class OptimizedRecursiveEngine:
         enable_adaptive: bool = True,
         enable_compression: bool = True,
         max_cache_size: int = 10000,
+        convergence_strategy: Optional[ConvergenceStrategy] = None,
     ):
         self.llm = llm
         self.cache = cache
         self.evaluator = evaluator
+        self.convergence_strategy = convergence_strategy or ConvergenceStrategy(
+            lambda a, b: evaluator.score(a, b),
+            evaluator.score,
+        )
 
         # Optimizers
         self.parallel_optimizer = ParallelThinkingOptimizer(
@@ -492,9 +497,12 @@ def create_optimized_engine(config: CoRTConfig) -> OptimizedRecursiveEngine:
     cache = InMemoryLRUCache(max_size=config.cache_size)
 
     evaluator = EnhancedQualityEvaluator()
+    convergence = ConvergenceStrategy(evaluator.score, evaluator.score)
 
     return OptimizedRecursiveEngine(
         llm=llm,
         cache=cache,
         evaluator=evaluator,
+        convergence_strategy=convergence,
+        enable_parallel=config.enable_parallel_thinking,
     )
