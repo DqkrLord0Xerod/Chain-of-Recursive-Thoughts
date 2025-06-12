@@ -194,13 +194,14 @@ Current provider classes include:
 Pass a policy mapping when creating `CoRTConfig`:
 
 ```python
-from core.chat_v2 import CoRTConfig, create_default_engine
+from core.chat_v2 import CoRTConfig
+from core.recursive_engine_v2 import create_optimized_engine
 
 config = CoRTConfig(
     api_key="KEY",
     model_policy={"assistant": "gpt-3.5-turbo", "critic": "gpt-4"},
 )
-engine = create_default_engine(config)
+engine = create_optimized_engine(config)
 ```
 
 * `docs/EXTENDING.md#custom-providers`

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import time
 from typing import Dict, List, Optional, Tuple
 
@@ -14,6 +15,15 @@ from core.interfaces import (
     LLMProvider,
     QualityEvaluator,
     LLMResponse,
+)
+from core.chat_v2 import CoRTConfig
+from core.model_policy import ModelSelector
+from api import fetch_models
+from core.providers import (
+    OpenRouterLLMProvider,
+    OpenAILLMProvider,
+    InMemoryLRUCache,
+    EnhancedQualityEvaluator,
 )
 from core.optimization.parallel_thinking import (
     ParallelThinkingOptimizer,
@@ -446,3 +456,38 @@ Rules:
             }
 
         return stats
+
+
+def create_optimized_engine(config: CoRTConfig) -> OptimizedRecursiveEngine:
+    """Build an :class:`OptimizedRecursiveEngine` from configuration."""
+
+    selector: Optional[ModelSelector] = None
+    default_model = config.model
+
+    if config.model_policy:
+        metadata = fetch_models()
+        selector = ModelSelector(metadata, config.model_policy)
+        default_model = selector.model_for_role("assistant")
+
+    if config.provider.lower() == "openai":
+        llm = OpenAILLMProvider(
+            api_key=config.api_key or os.getenv("OPENAI_API_KEY"),
+            model=default_model,
+            max_retries=config.max_retries,
+        )
+    else:
+        llm = OpenRouterLLMProvider(
+            api_key=config.api_key or os.getenv("OPENROUTER_API_KEY"),
+            model=default_model,
+            max_retries=config.max_retries,
+        )
+
+    cache = InMemoryLRUCache(max_size=config.cache_size)
+
+    evaluator = EnhancedQualityEvaluator()
+
+    return OptimizedRecursiveEngine(
+        llm=llm,
+        cache=cache,
+        evaluator=evaluator,
+    )

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from core.chat_v2 import CoRTConfig, create_default_engine
+from core.chat_v2 import CoRTConfig
+from core.recursive_engine_v2 import create_optimized_engine
 from config import settings
 
 
@@ -20,7 +21,7 @@ async def main() -> None:
         return
 
     config = CoRTConfig(api_key=api_key, model=settings.model)
-    engine = create_default_engine(config)
+    engine = create_optimized_engine(config)
 
     print("\nChat initialized! Type 'exit' to quit, 'save' to save conversation.")
     print("The AI will think recursively before each response.\n")
