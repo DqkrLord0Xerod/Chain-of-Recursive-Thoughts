@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
-import json
-import time
+import json  # noqa: F401
+import time  # noqa: F401
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
-import os
+import os  # noqa: F401
 
 import structlog
 
-from .strategies import AdaptiveThinkingStrategy
+from .strategies import AdaptiveThinkingStrategy  # noqa: F401
 from core.interfaces import (
     CacheProvider,
     LLMProvider,
@@ -18,9 +18,9 @@ from core.interfaces import (
 )
 from core.context_manager import ContextManager
 from core.recursion import ConvergenceStrategy
-from core.strategies import ThinkingStrategy, load_strategy
+from core.strategies import ThinkingStrategy, load_strategy  # noqa: F401
 from monitoring.metrics import MetricsRecorder
-from core.providers import (
+from core.providers import (  # noqa: F401
     OpenRouterLLMProvider,
     OpenAILLMProvider,
     InMemoryLRUCache,
@@ -33,11 +33,11 @@ from core.budget import BudgetManager
 from core.cache_manager import CacheManager
 from core.metrics_manager import MetricsManager
 from core.conversation import ConversationManager
-from core.tools import ToolRegistry, SearchTool, PythonExecutionTool
+from core.tools import ToolRegistry, SearchTool, PythonExecutionTool  # noqa: F401
 from core.memory import FaissMemoryStore
-from api import fetch_models
+from api import fetch_models  # noqa: F401
 from config import settings
-import tiktoken
+import tiktoken  # noqa: F401
 
 
 logger = structlog.get_logger(__name__)
@@ -148,3 +148,10 @@ class RecursiveThinkingEngine:
     async def run_tool(self, name: str, task: str) -> str:
         """Execute a registered tool."""
         return await self.tools.run(name, task)
+
+
+def create_default_engine(config: CoRTConfig) -> RecursiveThinkingEngine:
+    """Compatibility wrapper for existing tests."""
+    from .recursive_engine_v2 import create_optimized_engine
+
+    return create_optimized_engine(config)

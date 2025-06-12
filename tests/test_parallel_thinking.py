@@ -70,3 +70,44 @@ def test_threshold_propagation_parallel_engine():
     engine = create_optimized_engine(cfg)
     assert engine.evaluator.thresholds["overall"] == 0.75
     assert engine.parallel_optimizer.quality_threshold == 0.75
+
+
+class DummyCritic:
+    def __init__(self, scores):
+        self.scores = scores
+
+    async def score(self, response: str, prompt: str) -> float:
+        return self.scores.get(response, 0.0)
+
+
+class SeqLLM(LLMProvider):
+    def __init__(self, responses):
+        self.responses = responses
+        self.idx = 0
+
+    async def chat(self, messages, *, temperature=0.7, **kwargs):
+        resp = self.responses[self.idx]
+        self.idx += 1
+        return SimpleNamespace(content=resp, usage={"total_tokens": 1})
+
+
+@pytest.mark.asyncio
+async def test_critic_changes_selection():
+    llm = SeqLLM(["a1", "a2"])
+    critic = DummyCritic({"a1": 0.2, "a2": 0.8})
+    opt = ParallelThinkingOptimizer(
+        llm,
+        DummyEval(),
+        critic=critic,
+        max_parallel=2,
+        timeout_per_round=1.0,
+    )
+
+    best, candidates, _ = await opt.think_parallel(
+        "p",
+        "init",
+        max_rounds=1,
+        alternatives_per_round=2,
+    )
+
+    assert best == "a2"

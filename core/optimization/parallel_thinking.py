@@ -39,6 +39,7 @@ class ParallelThinkingOptimizer:
         llm_provider,
         quality_evaluator,
         *,
+        critic=None,
         max_parallel: int = 3,
         quality_threshold: float | None = None,
         timeout_per_round: float = 10.0,
@@ -46,6 +47,7 @@ class ParallelThinkingOptimizer:
     ):
         self.llm = llm_provider
         self.evaluator = quality_evaluator
+        self.critic = critic
         self.max_parallel = max_parallel
         self.quality_threshold = (
             quality_threshold
@@ -54,6 +56,16 @@ class ParallelThinkingOptimizer:
         )
         self.timeout_per_round = timeout_per_round
         self.enable_progressive = enable_progressive
+
+    async def _score_candidate(self, response: str, prompt: str) -> float:
+        """Score a response using evaluator and optional critic."""
+        score = self.evaluator.score(response, prompt)
+        if self.critic:
+            try:
+                score = await self.critic.score(response, prompt)
+            except Exception as e:  # pragma: no cover - logging
+                logger.warning("critic_error", error=str(e))
+        return score
         
     async def think_parallel(
         self,
@@ -72,9 +84,9 @@ class ParallelThinkingOptimizer:
         """
         start_time = time.time()
         candidates = []
-        
+
         # Initial candidate
-        initial_score = self.evaluator.score(initial_response, prompt)
+        initial_score = await self._score_candidate(initial_response, prompt)
         candidates.append(ThinkingCandidate(
             response=initial_response,
             quality_score=initial_score,
@@ -233,7 +245,7 @@ class ParallelThinkingOptimizer:
             alternative_text = response.content
             
             # Evaluate quality
-            quality_score = self.evaluator.score(alternative_text, prompt)
+            quality_score = await self._score_candidate(alternative_text, prompt)
             
             return ThinkingCandidate(
                 response=alternative_text,

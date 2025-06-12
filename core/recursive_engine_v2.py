@@ -24,6 +24,7 @@ from core.providers import (
     OpenAILLMProvider,
     InMemoryLRUCache,
     EnhancedQualityEvaluator,
+    CriticLLM,
 )
 from core.optimization.parallel_thinking import (
     ParallelThinkingOptimizer,
@@ -56,6 +57,7 @@ class OptimizedRecursiveEngine:
         cache: CacheProvider,
         evaluator: QualityEvaluator,
         *,
+        critic: Optional[CriticLLM] = None,
         enable_parallel: bool = True,
         enable_adaptive: bool = True,
         enable_compression: bool = True,
@@ -65,6 +67,7 @@ class OptimizedRecursiveEngine:
         self.llm = llm
         self.cache = cache
         self.evaluator = evaluator
+        self.critic = critic
         self.convergence_strategy = convergence_strategy or ConvergenceStrategy(
             lambda a, b: evaluator.score(a, b),
             evaluator.score,
@@ -74,6 +77,7 @@ class OptimizedRecursiveEngine:
         self.parallel_optimizer = ParallelThinkingOptimizer(
             llm,
             evaluator,
+            critic=critic,
             max_parallel=3,
             quality_threshold=evaluator.thresholds.get("overall", 0.92),
         ) if enable_parallel else None
@@ -89,6 +93,16 @@ class OptimizedRecursiveEngine:
         # Semantic cache for similar prompts
         self.semantic_cache: Dict[str, List[Tuple[str, str, float]]] = {}
         self.max_cache_size = max_cache_size
+
+    async def _score_response(self, response: str, prompt: str) -> float:
+        """Score a response using evaluator and optional critic."""
+        score = self.evaluator.score(response, prompt)
+        if self.critic:
+            try:
+                score = await self.critic.score(response, prompt)
+            except Exception as e:  # pragma: no cover - logging
+                logger.warning("critic_error", error=str(e))
+        return score
 
     @trace_method("recursive_think")
     async def think(
@@ -136,7 +150,7 @@ class OptimizedRecursiveEngine:
         initial_response = await self._generate_initial(compressed_prompt, context)
 
         # Check if initial is good enough
-        initial_quality = self.evaluator.score(initial_response.content, prompt)
+        initial_quality = await self._score_response(initial_response.content, prompt)
         if initial_quality >= target_quality:
             await self._update_semantic_cache(prompt, initial_response.content, initial_quality)
             self.prompt_history.append(prompt)
@@ -173,7 +187,7 @@ class OptimizedRecursiveEngine:
 
         # Record metrics
         thinking_time = time.time() - start_time
-        final_quality = self.evaluator.score(best_response, prompt)
+        final_quality = await self._score_response(best_response, prompt)
 
         await self._update_semantic_cache(prompt, best_response, final_quality)
 
@@ -217,7 +231,7 @@ class OptimizedRecursiveEngine:
 
         # Initial response
         initial_response = await self._generate_initial(prompt, context)
-        initial_quality = self.evaluator.score(initial_response.content, prompt)
+        initial_quality = await self._score_response(initial_response.content, prompt)
 
         yield {
             "stage": "initial",
@@ -241,7 +255,7 @@ class OptimizedRecursiveEngine:
             }]
 
             alternative = await self.llm.chat(messages, temperature=0.7 - round_num * 0.2)
-            alt_quality = self.evaluator.score(alternative.content, prompt)
+            alt_quality = await self._score_response(alternative.content, prompt)
 
             if alt_quality > current_quality:
                 current_best = alternative.content
@@ -504,6 +518,23 @@ def create_optimized_engine(config: CoRTConfig) -> OptimizedRecursiveEngine:
             max_retries=config.max_retries,
         )
 
+    critic = None
+    if selector:
+        critic_model = selector.model_for_role("critic")
+        if config.provider.lower() == "openai":
+            critic_provider = OpenAILLMProvider(
+                api_key=config.api_key or os.getenv("OPENAI_API_KEY"),
+                model=critic_model,
+                max_retries=config.max_retries,
+            )
+        else:
+            critic_provider = OpenRouterLLMProvider(
+                api_key=config.api_key or os.getenv("OPENROUTER_API_KEY"),
+                model=critic_model,
+                max_retries=config.max_retries,
+            )
+        critic = CriticLLM(critic_provider)
+
     cache = InMemoryLRUCache(max_size=config.cache_size)
 
     evaluator = EnhancedQualityEvaluator(thresholds=config.quality_thresholds)
@@ -517,6 +548,7 @@ def create_optimized_engine(config: CoRTConfig) -> OptimizedRecursiveEngine:
         llm=llm,
         cache=cache,
         evaluator=evaluator,
+        critic=critic,
         convergence_strategy=convergence,
         enable_parallel=config.enable_parallel_thinking,
     )
