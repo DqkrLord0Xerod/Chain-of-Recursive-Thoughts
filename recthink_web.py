@@ -12,10 +12,10 @@ from dataclasses import asdict
 import logging
 
 # Import the main RecThink class
-from core.chat_v2 import (
-    CoRTConfig,
-    create_default_engine,
-    RecursiveThinkingEngine,
+from core.chat_v2 import CoRTConfig
+from core.recursive_engine_v2 import (
+    OptimizedRecursiveEngine,
+    create_optimized_engine,
 )
 
 # Set up logging
@@ -34,7 +34,7 @@ app.add_middleware(
 )
 
 # Create a dictionary to store engine instances
-engine_instances: dict[str, RecursiveThinkingEngine] = {}
+engine_instances: dict[str, OptimizedRecursiveEngine] = {}
 
 
 # Pydantic models for request/response validation
@@ -74,7 +74,7 @@ async def initialize_chat(config: ChatConfig):
             if config.enforce_budget
             else 1_000_000_000
         )
-        engine = create_default_engine(
+        engine = create_optimized_engine(
             CoRTConfig(
                 api_key=config.api_key,
                 model=config.model,
