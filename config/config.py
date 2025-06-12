@@ -150,6 +150,18 @@ class CacheSettings(BaseSettings):
         case_sensitive = False
 
 
+class MemorySettings(BaseSettings):
+    """Vector memory configuration."""
+
+    backend: str = "faiss"
+    index_path: str = "memory.index"
+    embedding_dim: int = 1536
+    retrieval_top_k: int = 3
+
+    class Config:
+        case_sensitive = False
+
+
 class MonitoringSettings(BaseSettings):
     """Monitoring and observability."""
 
@@ -240,6 +252,7 @@ class ProductionSettings(BaseSettings):
     database: DatabaseSettings = Field(default_factory=DatabaseSettings)
     llm: LLMSettings = Field(default_factory=LLMSettings)
     cache: CacheSettings = Field(default_factory=CacheSettings)
+    memory: MemorySettings = Field(default_factory=MemorySettings)
     monitoring: MonitoringSettings = Field(default_factory=MonitoringSettings)
     performance: PerformanceSettings = Field(default_factory=PerformanceSettings)
 

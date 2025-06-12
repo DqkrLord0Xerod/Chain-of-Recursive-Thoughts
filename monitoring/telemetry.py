@@ -91,6 +91,18 @@ class CoRTMetrics:
             description="Token usage per request",
             unit="1",
         )
+
+        self.prompt_tokens = meter.create_histogram(
+            name="cort_prompt_tokens",
+            description="Prompt tokens per request",
+            unit="1",
+        )
+
+        self.completion_tokens = meter.create_histogram(
+            name="cort_completion_tokens",
+            description="Completion tokens per request",
+            unit="1",
+        )
         
         self.token_efficiency = meter.create_histogram(
             name="cort_token_efficiency",
@@ -372,6 +384,9 @@ def record_thinking_metrics(
     initial_quality: float,
     final_quality: float,
     total_tokens: int,
+    *,
+    prompt_tokens: Optional[int] = None,
+    completion_tokens: Optional[int] = None,
 ) -> None:
     """Record thinking process metrics."""
     metrics = get_metrics()
@@ -382,6 +397,11 @@ def record_thinking_metrics(
     metrics.quality_score.record(final_quality)
     metrics.quality_improvement.record(final_quality - initial_quality)
     metrics.token_usage.record(total_tokens)
+
+    if prompt_tokens is not None:
+        metrics.prompt_tokens.record(prompt_tokens)
+    if completion_tokens is not None:
+        metrics.completion_tokens.record(completion_tokens)
     
     if rounds > 0:
         metrics.token_efficiency.record(total_tokens / rounds)
