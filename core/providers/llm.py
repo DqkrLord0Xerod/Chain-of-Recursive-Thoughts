@@ -310,12 +310,35 @@ class OpenAILLMProvider:
         temperature: float = 0.7,
         max_tokens: Optional[int] = None,
     ):
-        response = await self.chat(
-            messages,
-            temperature=temperature,
-            max_tokens=max_tokens,
-        )
-        yield response.content
+        """Stream chat responses using OpenAI's streaming API."""
+        if not self._client:
+            self._client = openai.AsyncOpenAI(
+                api_key=self.api_key,
+                timeout=self.timeout,
+            )
+
+        try:
+            stream = await self._client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                stream=True,
+            )
+
+            async for chunk in stream:
+                delta = chunk.choices[0].delta
+                if delta.content:
+                    yield delta.content
+
+        except openai.RateLimitError as e:
+            raise RateLimitError(str(e))
+        except openai.BadRequestError as e:
+            if "token" in str(e).lower():
+                raise TokenLimitError(str(e))
+            raise APIError(str(e))
+        except openai.OpenAIError as e:
+            raise APIError(str(e)) from e
 
 
 class MultiProviderLLM:
