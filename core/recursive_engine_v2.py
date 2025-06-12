@@ -199,6 +199,7 @@ class OptimizedRecursiveEngine:
             "metadata": metrics,
         }
 
+    @trace_method("think_stream")
     async def think_stream(
         self,
         prompt: str,
@@ -256,6 +257,7 @@ class OptimizedRecursiveEngine:
             if current_quality >= 0.9:
                 break
 
+    @trace_method("generate_initial")
     async def _generate_initial(
         self,
         prompt: str,
@@ -288,6 +290,7 @@ class OptimizedRecursiveEngine:
 
         return response
 
+    @trace_method("compress_prompt")
     async def _compress_prompt(
         self,
         prompt: str,
@@ -331,6 +334,7 @@ Rules:
 
         return compressed
 
+    @trace_method("categorize_prompt")
     def _categorize_prompt(self, prompt: str) -> str:
         """
         Categorize prompt for adaptive optimization.
@@ -355,6 +359,7 @@ Rules:
         else:
             return "general"
 
+    @trace_method("check_semantic_cache")
     async def _check_semantic_cache(self, prompt: str) -> Optional[str]:
         """Check semantic cache for similar prompts."""
 
@@ -384,6 +389,7 @@ Rules:
 
         return best_match
 
+    @trace_method("update_semantic_cache")
     async def _update_semantic_cache(
         self,
         prompt: str,
@@ -416,6 +422,7 @@ Rules:
             oldest_hash = min(self.semantic_cache.keys())
             del self.semantic_cache[oldest_hash]
 
+    @trace_method("simple_similarity")
     def _simple_similarity(self, text1: str, text2: str) -> float:
         """Simple text similarity for semantic cache."""
 
@@ -438,12 +445,14 @@ Rules:
 
         return intersection / union
 
+    @trace_method("compute_cache_key")
     def _compute_cache_key(self, messages: List[Dict[str, str]]) -> str:
         """Compute deterministic cache key for messages."""
 
         content = json.dumps(messages, sort_keys=True)
         return hashlib.sha256(content.encode()).hexdigest()
 
+    @trace_method("get_engine_stats")
     async def get_stats(self) -> Dict:
         """Get engine statistics."""
 
