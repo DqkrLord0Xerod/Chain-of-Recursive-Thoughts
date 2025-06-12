@@ -75,7 +75,7 @@ This enables:
    See `config/config.py` for all available options.
 
 3. Run server
-   `uvicorn recthink_web:app --reload`
+   `uvicorn recthink_web_v2:app --reload`
 
 For CLI mode, frontend setup, and advanced options, see `docs/USAGE.md`.
 
@@ -135,7 +135,7 @@ graph TB
 
 ⚠️ **Note**: CoRT is transitioning from a v1 monolith to a clean v2 architecture.
 
-* **Current API**: `recthink_web.py` still runs on legacy v1 logic
+* **Current API**: `recthink_web_v2.py` still runs on legacy v1 logic
 * **v2 Core Engine**: `core/chat_v2.py` is modular and ready
 * **Migration Guide**: See `claude/cort-migration-guide.txt`
 
