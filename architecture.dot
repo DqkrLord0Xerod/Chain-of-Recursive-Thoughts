@@ -1,0 +1,82 @@
+digraph G {
+    rankdir=LR;
+    node [style=filled];
+
+    subgraph cluster_cli {
+        label="cli";
+        color=lightgrey;
+        "cli/main.py" [shape=box, fillcolor=lightgray];
+        main_fn [label="main()", shape=ellipse, fillcolor=gold];
+    }
+
+    subgraph cluster_web {
+        label="server";
+        color=lightgrey;
+        "recthink_web_v2.py" [shape=box, fillcolor=lightgray];
+        websocket_chat [label="chat_endpoint", shape=ellipse, fillcolor=gold];
+    }
+
+    subgraph cluster_core {
+        label="core";
+        color=lightgrey;
+        "core/chat_v2.py" [shape=box, fillcolor=lightgray];
+        "core/recursive_engine_v2.py" [shape=box, fillcolor=lightgray];
+        "core/providers/llm.py" [shape=box, fillcolor=lightgray];
+        "core/providers/resilient_llm.py" [shape=box, fillcolor=lightgray];
+        "core/providers/cache.py" [shape=box, fillcolor=lightgray];
+        "core/providers/critic.py" [shape=box, fillcolor=lightgray];
+        "core/providers/quality.py" [shape=box, fillcolor=lightgray];
+        OptimizedRecursiveEngine [shape=ellipse, fillcolor=orange];
+        CoRTConfig [shape=ellipse, fillcolor=orange];
+        create_optimized_engine [shape=ellipse, fillcolor=orange];
+        OpenRouterLLMProvider [shape=ellipse, fillcolor=lightgreen];
+        ResilientLLMProvider [shape=ellipse, fillcolor=lightgreen];
+        InMemoryLRUCache [shape=ellipse, fillcolor=lightgreen];
+        CriticLLM [shape=ellipse, fillcolor=lightgreen];
+        EnhancedQualityEvaluator [shape=ellipse, fillcolor=lightgreen];
+        LLMProvider [shape=ellipse, fillcolor=lightyellow];
+        CacheProvider [shape=ellipse, fillcolor=lightyellow];
+        QualityEvaluator [shape=ellipse, fillcolor=lightyellow];
+    }
+
+    subgraph cluster_config {
+        label="config";
+        color=lightgrey;
+        "config/config.py" [shape=box, fillcolor=lightgray];
+        Settings [shape=ellipse, fillcolor=lightblue];
+        load_production_config [shape=ellipse, fillcolor=lightblue];
+    }
+
+    subgraph cluster_monitoring {
+        label="monitoring";
+        color=lightgrey;
+        "monitoring/metrics_v2.py" [shape=box, fillcolor=lightgray];
+        MetricsAnalyzer [shape=ellipse, fillcolor=plum];
+    }
+
+    "cli/main.py" -> main_fn;
+    "recthink_web_v2.py" -> websocket_chat;
+
+    main_fn -> CoRTConfig;
+    main_fn -> create_optimized_engine;
+    main_fn -> Settings;
+
+    websocket_chat -> CoRTConfig;
+    websocket_chat -> create_optimized_engine;
+    websocket_chat -> MetricsAnalyzer;
+    websocket_chat -> load_production_config;
+
+    CoRTConfig -> OptimizedRecursiveEngine;
+    create_optimized_engine -> OptimizedRecursiveEngine;
+    create_optimized_engine -> OpenRouterLLMProvider;
+    create_optimized_engine -> ResilientLLMProvider;
+    create_optimized_engine -> InMemoryLRUCache;
+    create_optimized_engine -> EnhancedQualityEvaluator;
+    create_optimized_engine -> CriticLLM;
+
+    OptimizedRecursiveEngine -> LLMProvider;
+    OptimizedRecursiveEngine -> CacheProvider;
+    OptimizedRecursiveEngine -> QualityEvaluator;
+
+    MetricsAnalyzer -> OptimizedRecursiveEngine;
+}
