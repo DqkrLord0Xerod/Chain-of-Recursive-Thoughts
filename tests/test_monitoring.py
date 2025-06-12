@@ -354,3 +354,24 @@ class TestMetricsAnalyzer:
 
         cost_recs = [r for r in recommendations if r["type"] == "cost"]
         assert any("token usage" in r["title"] for r in cost_recs)
+
+
+def test_metrics_summary_endpoint(monkeypatch):
+    """Ensure metrics summary endpoint returns data from analyzer."""
+    from starlette.testclient import TestClient
+    import recthink_web_v2
+
+    class DummyAnalyzer:
+        def get_summary_stats(self):
+            return {"total_sessions": 2}
+
+        anomalies = [{"type": "test"}]
+
+    monkeypatch.setattr(recthink_web_v2, "metrics_analyzer", DummyAnalyzer())
+
+    client = TestClient(recthink_web_v2.app)
+    resp = client.get("/metrics/summary")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["summary"]["total_sessions"] == 2
+    assert data["anomalies"][0]["type"] == "test"

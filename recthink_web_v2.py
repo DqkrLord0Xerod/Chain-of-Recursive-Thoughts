@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 from dataclasses import asdict
 from typing import Dict, Optional, List
 
@@ -15,9 +16,11 @@ from core.recursive_engine_v2 import (
     OptimizedRecursiveEngine,
     create_optimized_engine,
 )
-from monitoring.metrics_v2 import MetricsAnalyzer
+codex/add-metrics-analyzer-endpoint-and-tests
+from monitoring.metrics_v2 import MetricsAnalyzer, ThinkingMetrics
 from monitoring.telemetry import initialize_telemetry
 from config.config import load_production_config
+main
 
 app = FastAPI(title="RecThink API v2")
 
@@ -68,6 +71,7 @@ async def chat_endpoint(request: ChatRequest):
         chat_sessions[request.session_id] = create_optimized_engine(CoRTConfig())
 
     engine = chat_sessions[request.session_id]
+    start_time = time.time()
     try:
         result: ThinkingResult = await engine.think_and_respond(
             request.message,
@@ -76,6 +80,19 @@ async def chat_endpoint(request: ChatRequest):
         )
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    end_time = time.time()
+    metrics = ThinkingMetrics(
+        session_id=request.session_id,
+        start_time=start_time,
+        end_time=end_time,
+        rounds_completed=result.thinking_rounds,
+        convergence_reason=result.convergence_reason,
+        quality_scores=[r.quality_score for r in result.thinking_history],
+        round_durations=[r.duration for r in result.thinking_history],
+        alternatives_generated=[len(r.alternatives) for r in result.thinking_history],
+    )
+    metrics_analyzer.record_session(metrics)
 
     history = [asdict(round) for round in result.thinking_history]
 
@@ -179,6 +196,15 @@ async def websocket_stream(websocket: WebSocket, session_id: str):
         pass
     finally:
         await websocket.close()
+
+
+@app.get("/metrics/summary")
+async def metrics_summary() -> Dict[str, object]:
+    """Return summary statistics and recent anomalies."""
+    return {
+        "summary": metrics_analyzer.get_summary_stats(),
+        "anomalies": list(metrics_analyzer.anomalies),
+    }
 
 
 if __name__ == "__main__":
