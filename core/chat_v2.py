@@ -74,6 +74,7 @@ class CoRTConfig:
     cache_size: int = 128
     max_retries: int = 3
     budget_token_limit: int = 100000
+    enable_parallel_thinking: bool = True
 
 
 class ThinkingStrategy(Protocol):

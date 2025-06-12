@@ -498,4 +498,5 @@ def create_optimized_engine(config: CoRTConfig) -> OptimizedRecursiveEngine:
         cache=cache,
         evaluator=evaluator,
         convergence_strategy=convergence,
+        enable_parallel=config.enable_parallel_thinking,
     )
