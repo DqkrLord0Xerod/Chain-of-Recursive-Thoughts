@@ -129,3 +129,46 @@ class QualityAssessor:
         }
         metrics["overall"] = sum(metrics.values()) / len(metrics)
         return metrics
+
+
+class ConvergenceStrategy:
+    """Unified interface wrapping tracker and trend detection."""
+
+    def __init__(
+        self,
+        similarity_fn: Callable[[str, str], float],
+        score_fn: Callable[[str, str], float],
+        *,
+        similarity_threshold: float = 0.95,
+        improvement_threshold: float = 0.01,
+        oscillation_threshold: float = 0.95,
+        window: int = 3,
+        history_size: int = 5,
+    ) -> None:
+        self._tracker = ConvergenceTracker(
+            similarity_fn,
+            score_fn,
+            strategy=TrendConvergenceStrategy(
+                similarity_threshold,
+                improvement_threshold,
+                oscillation_threshold,
+                window,
+            ),
+            history_size=history_size,
+        )
+
+    def add(self, response: str, prompt: str) -> None:
+        """Add response to the history."""
+        self._tracker.add(response, prompt)
+
+    def update(self, response: str, prompt: str) -> Tuple[bool, str]:
+        """Add and immediately check for convergence."""
+        return self._tracker.update(response, prompt)
+
+    def should_continue(self, prompt: str) -> Tuple[bool, str]:
+        """Evaluate whether processing should continue."""
+        return self._tracker.should_continue(prompt)
+
+    @property
+    def rolling_average(self) -> float:
+        return self._tracker.rolling_average

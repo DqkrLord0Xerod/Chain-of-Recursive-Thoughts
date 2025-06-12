@@ -18,6 +18,7 @@ from core.interfaces import (
     QualityEvaluator,
 )
 from core.context_manager import ContextManager
+from core.recursion import ConvergenceStrategy
 from monitoring.metrics import MetricsRecorder
 from core.providers import (
     OpenRouterLLMProvider,
@@ -179,6 +180,7 @@ class RecursiveThinkingEngine:
         evaluator: QualityEvaluator,
         context_manager: ContextManager,
         thinking_strategy: ThinkingStrategy,
+        convergence_strategy: Optional[ConvergenceStrategy] = None,
         model_selector: Optional[ModelSelector] = None,
         metrics_recorder: Optional[MetricsRecorder] = None,
         budget_manager: Optional["BudgetManager"] = None,
@@ -188,6 +190,10 @@ class RecursiveThinkingEngine:
         self.evaluator = evaluator
         self.context_manager = context_manager
         self.thinking_strategy = thinking_strategy
+        self.convergence_strategy = convergence_strategy or ConvergenceStrategy(
+            evaluator.score,
+            evaluator.score,
+        )
         self.model_selector = model_selector
         self.metrics_recorder = metrics_recorder
         self.budget_manager = budget_manager
@@ -250,6 +256,7 @@ class RecursiveThinkingEngine:
         # Initial quality assessment
         initial_quality = self.evaluator.score(current_best, user_input)
         quality_scores.append(initial_quality)
+        self.convergence_strategy.add(current_best, user_input)
         
         thinking_history.append(
             ThinkingRound(
@@ -268,7 +275,7 @@ class RecursiveThinkingEngine:
         
         for round_num in range(1, thinking_rounds + 1):
             round_start = time.time()
-            
+
             # Check if we should continue
             should_continue, reason = await self.thinking_strategy.should_continue(
                 rounds_completed, quality_scores, all_responses
@@ -276,6 +283,13 @@ class RecursiveThinkingEngine:
             
             if not should_continue:
                 convergence_reason = reason
+                break
+
+            conv_continue, conv_reason = self.convergence_strategy.should_continue(
+                user_input
+            )
+            if not conv_continue:
+                convergence_reason = conv_reason
                 break
                 
             logger.info("thinking_round_start", round=round_num)
@@ -317,6 +331,11 @@ class RecursiveThinkingEngine:
             quality_scores.append(best_quality)
             all_responses.append(current_best)
             rounds_completed += 1
+
+            cont, reason = self.convergence_strategy.update(current_best, user_input)
+            if not cont:
+                convergence_reason = reason
+                break
             
             logger.info(
                 "thinking_round_complete",
@@ -591,6 +610,7 @@ def create_default_engine(config: CoRTConfig) -> RecursiveThinkingEngine:
     evaluator = EnhancedQualityEvaluator()
 
     strategy = AdaptiveThinkingStrategy(llm)
+    convergence = ConvergenceStrategy(evaluator.score, evaluator.score)
 
     budget = BudgetManager(default_model, token_limit=config.budget_token_limit)
 
@@ -600,6 +620,7 @@ def create_default_engine(config: CoRTConfig) -> RecursiveThinkingEngine:
         evaluator=evaluator,
         context_manager=context_manager,
         thinking_strategy=strategy,
+        convergence_strategy=convergence,
         model_selector=selector,
         budget_manager=budget,
     )
