@@ -11,8 +11,11 @@ const RecursiveThinkingInterface = () => {
     thinkingProcess,
     apiKey,
     model,
+    models,
     thinkingRounds,
     alternativesPerRound,
+    budgetCap,
+    enforceBudget,
     error,
     showThinkingProcess,
     connectionStatus,
@@ -22,6 +25,8 @@ const RecursiveThinkingInterface = () => {
     setThinkingRounds,
     setAlternativesPerRound,
     setShowThinkingProcess,
+    setBudgetCap,
+    setEnforceBudget,
     
     initializeChat,
     sendMessage,
@@ -329,15 +334,19 @@ const RecursiveThinkingInterface = () => {
                 
                 <div className="mb-4">
                   <label className="block text-sm font-medium text-gray-700 mb-1">Model</label>
-                  <select 
+                  <select
                     value={model}
                     onChange={(e) => setModel(e.target.value)}
                     className="w-full p-2 border rounded focus:ring-blue-500 focus:border-blue-500"
                   >
-                    <option value="mistralai/mistral-small-3.1-24b-instruct:free">Mistral Small 3.1 24B</option>
-                    <option value="anthropic/claude-3-opus-20240229">Claude 3 Opus</option>
-                    <option value="anthropic/claude-3-sonnet-20240229">Claude 3 Sonnet</option>
-                    <option value="openai/gpt-4o-2024-05-13">GPT-4o</option>
+                    {models.length === 0 && (
+                      <option value={model}>{model}</option>
+                    )}
+                    {models.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.id}
+                      </option>
+                    ))}
                   </select>
                 </div>
               </div>
@@ -372,6 +381,29 @@ const RecursiveThinkingInterface = () => {
                     onChange={(e) => setAlternativesPerRound(parseInt(e.target.value, 10))}
                     className="w-full p-2 border rounded focus:ring-blue-500 focus:border-blue-500"
                   />
+                </div>
+
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Job Budget Cap (tokens)</label>
+                  <input
+                    type="number"
+                    min="1000"
+                    value={budgetCap}
+                    onChange={(e) => setBudgetCap(parseInt(e.target.value, 10))}
+                    className="w-full p-2 border rounded focus:ring-blue-500 focus:border-blue-500"
+                  />
+                </div>
+
+                <div className="mb-4">
+                  <label className="flex items-center text-sm font-medium text-gray-700">
+                    <input
+                      type="checkbox"
+                      checked={enforceBudget}
+                      onChange={(e) => setEnforceBudget(e.target.checked)}
+                      className="mr-2 h-4 w-4 text-blue-600 rounded focus:ring-blue-500"
+                    />
+                    Enforce budget limit
+                  </label>
                 </div>
                 
                 <div className="mb-4">

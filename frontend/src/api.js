@@ -1,13 +1,23 @@
 // API client for RecThink
 const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || 'http://localhost:8000/api';
 
-export const initializeChat = async (apiKey, model) => {
+export const initializeChat = async (
+  apiKey,
+  model,
+  budgetTokenLimit,
+  enforceBudget = true
+) => {
   const response = await fetch(`${API_BASE_URL}/initialize`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ api_key: apiKey, model }),
+    body: JSON.stringify({
+      api_key: apiKey,
+      model,
+      budget_token_limit: budgetTokenLimit,
+      enforce_budget: enforceBudget,
+    }),
   });
   
   if (!response.ok) {
@@ -77,6 +87,16 @@ export const deleteSession = async (sessionId) => {
     throw new Error(`Failed to delete session: ${response.statusText}`);
   }
   
+  return response.json();
+};
+
+export const getModels = async () => {
+  const response = await fetch(`${API_BASE_URL}/models`);
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch models: ${response.statusText}`);
+  }
+
   return response.json();
 };
 

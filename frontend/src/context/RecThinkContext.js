@@ -13,8 +13,11 @@ export const RecThinkProvider = ({ children }) => {
   const [thinkingProcess, setThinkingProcess] = useState(null);
   const [apiKey, setApiKey] = useState('');
   const [model, setModel] = useState('mistralai/mistral-small-3.1-24b-instruct:free');
+  const [models, setModels] = useState([]);
   const [thinkingRounds, setThinkingRounds] = useState('auto');
   const [alternativesPerRound, setAlternativesPerRound] = useState(3);
+  const [budgetCap, setBudgetCap] = useState(100000);
+  const [enforceBudget, setEnforceBudget] = useState(true);
   const [error, setError] = useState(null);
   const [showThinkingProcess, setShowThinkingProcess] = useState(false);
   const [sessions, setSessions] = useState([]);
@@ -25,7 +28,12 @@ export const RecThinkProvider = ({ children }) => {
   const initializeChat = async () => {
     try {
       setError(null);
-      const result = await api.initializeChat(apiKey, model);
+      const result = await api.initializeChat(
+        apiKey,
+        model,
+        budgetCap,
+        enforceBudget
+      );
       setSessionId(result.session_id);
       
       // Initialize with welcome message
@@ -134,6 +142,18 @@ export const RecThinkProvider = ({ children }) => {
     }
   };
 
+  useEffect(() => {
+    const loadModels = async () => {
+      try {
+        const result = await api.getModels();
+        setModels(result.models);
+      } catch (err) {
+        // Ignore fetching errors in UI context
+      }
+    };
+    loadModels();
+  }, []);
+
   // Set up WebSocket listeners when connection is established
   useEffect(() => {
     if (!websocket) return;
@@ -187,8 +207,11 @@ export const RecThinkProvider = ({ children }) => {
     thinkingProcess,
     apiKey,
     model,
+    models,
     thinkingRounds,
     alternativesPerRound,
+    budgetCap,
+    enforceBudget,
     error,
     showThinkingProcess,
     sessions,
@@ -200,6 +223,8 @@ export const RecThinkProvider = ({ children }) => {
     setThinkingRounds,
     setAlternativesPerRound,
     setShowThinkingProcess,
+    setBudgetCap,
+    setEnforceBudget,
     
     // Actions
     initializeChat,
