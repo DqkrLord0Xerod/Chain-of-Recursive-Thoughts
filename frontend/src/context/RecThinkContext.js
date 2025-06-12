@@ -75,16 +75,23 @@ export const RecThinkProvider = ({ children }) => {
         thinkingRounds: rounds,
         alternativesPerRound
       });
-      
+
       // Update conversation with assistant's response
       setMessages([...newMessages, { role: 'assistant', content: result.response }]);
-      
+
       // Store thinking process
       setThinkingProcess({
         rounds: result.thinking_rounds,
         history: result.thinking_history
       });
-      
+
+      const costData = await api.getCost(sessionId);
+      setCost({
+        tokenLimit: costData.token_limit,
+        tokensUsed: costData.tokens_used,
+        dollarsSpent: costData.dollars_spent,
+      });
+
       setIsThinking(false);
       return result;
     } catch (err) {
@@ -142,6 +149,26 @@ export const RecThinkProvider = ({ children }) => {
     }
   };
 
+  const finalizeSession = async () => {
+    if (!sessionId) return null;
+    try {
+      setError(null);
+      const result = await api.finalizeSession(sessionId);
+      setSessionId(null);
+      setMessages([...messages, { role: 'assistant', content: result.summary }]);
+      setThinkingProcess(null);
+      setCost({
+        tokenLimit: result.cost.token_limit,
+        tokensUsed: result.cost.tokens_used,
+        dollarsSpent: result.cost.dollars_spent,
+      });
+      return result.summary;
+    } catch (err) {
+      setError(err.message);
+      return null;
+    }
+  };
+
   useEffect(() => {
     const loadModels = async () => {
       try {
@@ -179,6 +206,10 @@ export const RecThinkProvider = ({ children }) => {
           rounds: data.thinking_rounds,
           history: data.thinking_history
         });
+        setCost(prev => ({
+          ...prev,
+          dollarsSpent: data.cost_total,
+        }));
         setIsThinking(false);
       } else if (data.error) {
         setError(data.error);
@@ -199,6 +230,26 @@ export const RecThinkProvider = ({ children }) => {
     };
   }, [websocket]);
 
+  // Periodically fetch cost metrics
+  useEffect(() => {
+    if (!sessionId) return undefined;
+
+    const interval = setInterval(async () => {
+      try {
+        const data = await api.getCost(sessionId);
+        setCost({
+          tokenLimit: data.token_limit,
+          tokensUsed: data.tokens_used,
+          dollarsSpent: data.dollars_spent,
+        });
+      } catch (e) {
+        // ignore errors in polling
+      }
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [sessionId]);
+
   // Context value
   const value = {
     sessionId,
@@ -216,6 +267,7 @@ export const RecThinkProvider = ({ children }) => {
     showThinkingProcess,
     sessions,
     connectionStatus,
+    cost,
     
     // Setters
     setApiKey,
@@ -231,7 +283,8 @@ export const RecThinkProvider = ({ children }) => {
     sendMessage,
     saveConversation,
     loadSessions,
-    deleteSession
+    deleteSession,
+    finalizeSession
   };
 
   return (

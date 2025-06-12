@@ -57,6 +57,10 @@ class SaveRequest(BaseModel):
     filename: Optional[str] = None
 
 
+class FinalizeRequest(BaseModel):
+    session_id: str
+
+
 @app.post("/api/initialize")
 async def initialize_chat(config: ChatConfig):
     """Initialize a new chat session"""
@@ -199,6 +203,26 @@ async def get_cost(session_id: str):
         "tokens_used": manager.tokens_used,
         "dollars_spent": manager.dollars_spent,
     }
+
+
+@app.post("/api/finalize")
+async def finalize_session(request: FinalizeRequest):
+    """Summarize conversation and end the session."""
+    if request.session_id not in engine_instances:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    engine = engine_instances.pop(request.session_id)
+
+    summary = await engine.summarize_history()
+
+    manager = engine.budget_manager
+    cost = {
+        "token_limit": manager.token_limit if manager else 0,
+        "tokens_used": manager.tokens_used if manager else 0,
+        "dollars_spent": manager.dollars_spent if manager else 0.0,
+    }
+
+    return {"summary": summary, "cost": cost}
 
 
 # WebSocket for streaming thinking process

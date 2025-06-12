@@ -78,6 +78,32 @@ export const listSessions = async () => {
   return response.json();
 };
 
+export const getCost = async (sessionId) => {
+  const response = await fetch(`${API_BASE_URL}/cost/${sessionId}`);
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch cost: ${response.statusText}`);
+  }
+
+  return response.json();
+};
+
+export const finalizeSession = async (sessionId) => {
+  const response = await fetch(`${API_BASE_URL}/finalize`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ session_id: sessionId }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to finalize session: ${response.statusText}`);
+  }
+
+  return response.json();
+};
+
 export const deleteSession = async (sessionId) => {
   const response = await fetch(`${API_BASE_URL}/sessions/${sessionId}`, {
     method: 'DELETE',

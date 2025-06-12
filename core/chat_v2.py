@@ -520,11 +520,32 @@ Respond in this JSON format:
     async def load_conversation(self, filepath: str) -> None:
         """Load conversation from file."""
         import aiofiles
-        
+
         async with aiofiles.open(filepath, 'r') as f:
             data = json.loads(await f.read())
 
         self.conversation_history = data.get("conversation", [])
+
+    async def summarize_history(self) -> str:
+        """Summarize the current conversation using the LLM."""
+        if not self.conversation_history:
+            return "No conversation yet."
+
+        messages = self.conversation_history + [
+            {
+                "role": "user",
+                "content": "Summarize the conversation so far in a short paragraph.",
+            }
+        ]
+
+        response = await self.llm.chat(messages, temperature=0.5)
+
+        if self.budget_manager:
+            self.budget_manager.record_usage(
+                response.usage.get("total_tokens", 0)
+            )
+
+        return response.content
 
 
 def create_default_engine(config: CoRTConfig) -> RecursiveThinkingEngine:
