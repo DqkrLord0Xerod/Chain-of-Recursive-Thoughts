@@ -10,6 +10,7 @@ import os
 
 import structlog
 
+from .strategies import AdaptiveThinkingStrategy
 from core.interfaces import (
     CacheProvider,
     LLMProvider,
@@ -86,6 +87,7 @@ class CoRTConfig:
     enable_tools: bool = True
     thinking_strategy: str = "adaptive"
     quality_thresholds: Optional[Dict[str, float]] = None
+    advanced_convergence: bool = False
     memory_dim: int = 1536
     memory_top_k: int = 3
 
@@ -120,6 +122,7 @@ class RecursiveThinkingEngine:
         self.convergence_strategy = convergence_strategy or ConvergenceStrategy(
             evaluator.score,
             evaluator.score,
+            advanced=False,  # Will be passed explicitly in create_default_engine
         )
         self.model_selector = model_selector
         self.budget_manager = budget_manager
@@ -145,7 +148,3 @@ class RecursiveThinkingEngine:
     async def run_tool(self, name: str, task: str) -> str:
         """Execute a registered tool."""
         return await self.tools.run(name, task)
-
-
-# create_default_engine function remains unchanged from original message
-# It already merges all required elements correctly
