@@ -5,41 +5,44 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))  # noqa: E402
 
 from starlette.testclient import TestClient  # noqa: E402
 
-import recthink_web  # noqa: E402
-
-
-def setup_session(client):
-    resp = client.post("/api/initialize", json={"api_key": "x", "model": "m"})
-    assert resp.status_code == 200
-    return resp.json()["session_id"]
+import recthink_web_v2  # noqa: E402
+from core.chat_v2 import ThinkingResult  # noqa: E402
 
 
 def test_send_message_custom_rounds(monkeypatch):
-    client = TestClient(recthink_web.app)
-    session_id = setup_session(client)
-
+    recthink_web_v2.chat_sessions.clear()
     captured = {}
 
-    async def fake_think(
-        msg,
-        verbose=True,
-        thinking_rounds=None,
-        alternatives_per_round=3,
-    ):
-        captured["rounds"] = thinking_rounds
-        captured["alts"] = alternatives_per_round
-        return {
-            "response": "ok",
-            "thinking_rounds": thinking_rounds,
-            "thinking_history": [],
-        }
+    class DummyEngine:
+        async def think_and_respond(
+            self,
+            message,
+            thinking_rounds=None,
+            alternatives_per_round=3,
+        ):
+            captured["rounds"] = thinking_rounds
+            captured["alts"] = alternatives_per_round
+            return ThinkingResult(
+                response="ok",
+                thinking_rounds=thinking_rounds or 0,
+                thinking_history=[],
+                total_tokens=1,
+                processing_time=0.1,
+                convergence_reason="done",
+                metadata={},
+            )
 
-    recthink_web.engine_instances[session_id].think_and_respond = fake_think
+    monkeypatch.setattr(
+        recthink_web_v2,
+        "create_optimized_engine",
+        lambda config: DummyEngine(),
+    )
 
+    client = TestClient(recthink_web_v2.app)
     resp = client.post(
-        "/api/send_message",
+        "/chat",
         json={
-            "session_id": session_id,
+            "session_id": "s1",
             "message": "hi",
             "thinking_rounds": 2,
             "alternatives_per_round": 4,
@@ -52,30 +55,38 @@ def test_send_message_custom_rounds(monkeypatch):
 
 
 def test_send_message_defaults(monkeypatch):
-    client = TestClient(recthink_web.app)
-    session_id = setup_session(client)
-
+    recthink_web_v2.chat_sessions.clear()
     captured = {}
 
-    async def fake_think(
-        msg,
-        verbose=True,
-        thinking_rounds=None,
-        alternatives_per_round=3,
-    ):
-        captured["rounds"] = thinking_rounds
-        captured["alts"] = alternatives_per_round
-        return {
-            "response": "ok",
-            "thinking_rounds": 3,
-            "thinking_history": [],
-        }
+    class DummyEngine:
+        async def think_and_respond(
+            self,
+            message,
+            thinking_rounds=None,
+            alternatives_per_round=3,
+        ):
+            captured["rounds"] = thinking_rounds
+            captured["alts"] = alternatives_per_round
+            return ThinkingResult(
+                response="ok",
+                thinking_rounds=3,
+                thinking_history=[],
+                total_tokens=1,
+                processing_time=0.1,
+                convergence_reason="done",
+                metadata={},
+            )
 
-    recthink_web.engine_instances[session_id].think_and_respond = fake_think
+    monkeypatch.setattr(
+        recthink_web_v2,
+        "create_optimized_engine",
+        lambda config: DummyEngine(),
+    )
 
+    client = TestClient(recthink_web_v2.app)
     resp = client.post(
-        "/api/send_message",
-        json={"session_id": session_id, "message": "hi"},
+        "/chat",
+        json={"session_id": "s2", "message": "hi"},
     )
     assert resp.status_code == 200
     assert captured["rounds"] is None
