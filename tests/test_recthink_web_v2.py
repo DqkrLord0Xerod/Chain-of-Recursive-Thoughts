@@ -72,3 +72,19 @@ def test_websocket_stream(monkeypatch):
         second = ws.receive_json()
         assert first["stage"] == "start"
         assert second["stage"] == "end"
+
+
+def test_websocket_stream_order(monkeypatch):
+    """Ensure streaming messages arrive in the expected order."""
+    client = TestClient(recthink_web_v2.app)
+    monkeypatch.setattr(
+        recthink_web_v2,
+        "create_optimized_engine",
+        lambda config: DummyEngine(),
+    )
+
+    with client.websocket_connect("/ws/stream/s4") as ws:
+        ws.send_text(json.dumps({"message": "hi"}))
+        updates = [ws.receive_json() for _ in range(2)]
+        stages = [u["stage"] for u in updates]
+        assert stages == ["start", "end"]
