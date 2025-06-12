@@ -5,20 +5,19 @@ from __future__ import annotations
 import json
 import time
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Protocol
+from typing import Dict, List, Optional
 import os
 
 import structlog
-from exceptions import TokenLimitError
 
 from core.interfaces import (
     CacheProvider,
     LLMProvider,
-    LLMResponse,
     QualityEvaluator,
 )
 from core.context_manager import ContextManager
 from core.recursion import ConvergenceStrategy
+from core.strategies import ThinkingStrategy, load_strategy
 from monitoring.metrics import MetricsRecorder
 from core.providers import (
     OpenRouterLLMProvider,
@@ -78,100 +77,7 @@ class CoRTConfig:
     max_retries: int = 3
     budget_token_limit: int = 100000
     enable_parallel_thinking: bool = True
-
-
-class ThinkingStrategy(Protocol):
-    """Protocol for thinking strategies."""
-    
-    async def determine_rounds(self, prompt: str) -> int:
-        """Determine number of thinking rounds needed."""
-        ...
-        
-    async def should_continue(
-        self,
-        rounds_completed: int,
-        quality_scores: List[float],
-        responses: List[str],
-    ) -> tuple[bool, str]:
-        """Determine if thinking should continue."""
-        ...
-
-
-class AdaptiveThinkingStrategy:
-    """Adaptive strategy that adjusts based on complexity and quality."""
-    
-    def __init__(
-        self,
-        llm: LLMProvider,
-        min_rounds: int = 1,
-        max_rounds: int = 5,
-        quality_threshold: float = 0.95,
-        improvement_threshold: float = 0.01,
-    ):
-        self.llm = llm
-        self.min_rounds = min_rounds
-        self.max_rounds = max_rounds
-        self.quality_threshold = quality_threshold
-        self.improvement_threshold = improvement_threshold
-        
-    async def determine_rounds(self, prompt: str) -> int:
-        """Use LLM to determine optimal number of rounds."""
-        meta_prompt = f'''Analyze this prompt and determine the optimal number of thinking rounds (1-{self.max_rounds}):
-
-"{prompt}"
-
-Consider:
-- Complexity of the request
-- Need for accuracy
-- Type of response required
-
-Respond with just a number between {self.min_rounds} and {self.max_rounds}.'''
-
-        response = await self.llm.chat(
-            [{"role": "user", "content": meta_prompt}],
-            temperature=0.3,
-        )
-        
-        try:
-            rounds = int(''.join(filter(str.isdigit, response.content)))
-            return max(self.min_rounds, min(rounds, self.max_rounds))
-        except (ValueError, TypeError):
-            logger.warning("Failed to parse thinking rounds", response=response.content)
-            return 3  # Default
-            
-    async def should_continue(
-        self,
-        rounds_completed: int,
-        quality_scores: List[float],
-        responses: List[str],
-    ) -> tuple[bool, str]:
-        """Determine if thinking should continue."""
-        
-        if rounds_completed >= self.max_rounds:
-            return False, "max_rounds_reached"
-            
-        if not quality_scores:
-            return True, "no_scores_yet"
-            
-        # Check if quality is good enough
-        if quality_scores[-1] >= self.quality_threshold:
-            return False, "quality_threshold_met"
-            
-        # Check if we're plateauing
-        if len(quality_scores) >= 3:
-            recent_scores = quality_scores[-3:]
-            improvement = max(recent_scores) - min(recent_scores)
-            if improvement < self.improvement_threshold:
-                return False, "quality_plateau"
-                
-        # Check for oscillation
-        if len(responses) >= 3:
-            # Simple check: if we've seen this response before
-            if responses[-1] in responses[:-1]:
-                return False, "oscillation_detected"
-                
-        return True, "continue"
-
+    thinking_strategy: str = "adaptive"
 
 class RecursiveThinkingEngine:
     """Clean, dependency-injected recursive thinking engine."""
@@ -517,7 +423,7 @@ def create_default_engine(config: CoRTConfig) -> RecursiveThinkingEngine:
 
     evaluator = EnhancedQualityEvaluator()
 
-    strategy = AdaptiveThinkingStrategy(llm)
+    strategy = load_strategy(config.thinking_strategy, llm)
     convergence = ConvergenceStrategy(evaluator.score, evaluator.score)
 
     budget = BudgetManager(default_model, token_limit=config.budget_token_limit)
