@@ -9,6 +9,7 @@ from typing import Dict, List, Optional, Protocol
 import os
 
 import structlog
+from exceptions import TokenLimitError
 
 from core.interfaces import (
     CacheProvider,
@@ -25,6 +26,7 @@ from core.providers import (
     EnhancedQualityEvaluator,
 )
 from core.model_policy import ModelSelector
+from core.budget import BudgetManager
 from api import fetch_models
 from config import settings
 import tiktoken
@@ -175,6 +177,7 @@ class RecursiveThinkingEngine:
         thinking_strategy: ThinkingStrategy,
         model_selector: Optional[ModelSelector] = None,
         metrics_recorder: Optional[MetricsRecorder] = None,
+        budget_manager: Optional["BudgetManager"] = None,
     ):
         self.llm = llm
         self.cache = cache
@@ -183,6 +186,7 @@ class RecursiveThinkingEngine:
         self.thinking_strategy = thinking_strategy
         self.model_selector = model_selector
         self.metrics_recorder = metrics_recorder
+        self.budget_manager = budget_manager
         self.conversation_history: List[Dict[str, str]] = []
         
     async def think_and_respond(
@@ -222,6 +226,12 @@ class RecursiveThinkingEngine:
             temperature=temperature,
             role="assistant",
         )
+
+        if self.budget_manager and self.budget_manager.will_exceed_budget(0):
+            convergence_reason = "budget_exceeded"
+            thinking_rounds = 0
+        else:
+            convergence_reason = "max_rounds"
         
         current_best = initial_response.content
         thinking_history: List[ThinkingRound] = []
@@ -247,7 +257,6 @@ class RecursiveThinkingEngine:
         
         # Recursive thinking rounds
         rounds_completed = 0
-        convergence_reason = "max_rounds"
         
         for round_num in range(1, thinking_rounds + 1):
             round_start = time.time()
@@ -272,6 +281,10 @@ class RecursiveThinkingEngine:
             )
             
             total_tokens += round_tokens
+
+            if self.budget_manager and self.budget_manager.will_exceed_budget(0):
+                convergence_reason = "budget_exceeded"
+                break
             
             # Record all alternatives
             for i, alt in enumerate(alternatives):
@@ -369,6 +382,11 @@ class RecursiveThinkingEngine:
             self.llm.model = self.model_selector.model_for_role(role)
 
         response = await self.llm.chat(messages, temperature=temperature)
+
+        if self.budget_manager:
+            if self.budget_manager.will_exceed_budget(response.usage.get("total_tokens", 0)):
+                raise TokenLimitError("Token budget exceeded")
+            self.budget_manager.record_usage(response.usage.get("total_tokens", 0))
         
         # Cache the response
         await self.cache.set(
