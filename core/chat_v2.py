@@ -24,6 +24,7 @@ from core.providers import (
     OpenAILLMProvider,
     InMemoryLRUCache,
     EnhancedQualityEvaluator,
+    CriticLLM,
 )
 from core.model_policy import ModelSelector
 from core.budget import BudgetManager
@@ -99,6 +100,7 @@ class RecursiveThinkingEngine:
         metrics_recorder: Optional[MetricsRecorder] = None,
         budget_manager: Optional["BudgetManager"] = None,
         conversation_manager: Optional[ConversationManager] = None,
+        critic: Optional[CriticLLM] = None,
     ) -> None:
         self.llm = llm
         self.cache = cache
@@ -123,6 +125,7 @@ class RecursiveThinkingEngine:
             context_manager,
             budget_manager=budget_manager,
         )
+        self.critic = critic
         
     async def think_and_respond(
         self,
@@ -173,6 +176,14 @@ class RecursiveThinkingEngine:
             convergence_reason = "max_rounds"
         
         current_best = initial_response.content
+
+        if self.critic:
+            review = await self.critic.review(user_input, current_best)
+            if review.get("improved"):
+                current_best = review["improved"]
+            critic_score = review.get("score")
+        else:
+            critic_score = None
         thinking_history: List[ThinkingRound] = []
         quality_scores: List[float] = []
         all_responses: List[str] = [current_best]
@@ -180,6 +191,8 @@ class RecursiveThinkingEngine:
         
         # Initial quality assessment
         initial_quality = self.evaluator.score(current_best, user_input)
+        if critic_score is not None:
+            initial_quality = max(initial_quality, critic_score)
         quality_scores.append(initial_quality)
         self.convergence_strategy.add(current_best, user_input)
         
@@ -379,6 +392,11 @@ Respond in this JSON format:
             best = response.content
             thinking = "JSON parsing failed, using raw response"
 
+        if self.critic:
+            review = await self.critic.review(prompt, best)
+            if review.get("improved"):
+                best = review["improved"]
+
         return best, alternatives, thinking, response.usage["total_tokens"]
 
 
@@ -426,6 +444,27 @@ def create_default_engine(config: CoRTConfig) -> RecursiveThinkingEngine:
     strategy = load_strategy(config.thinking_strategy, llm, evaluator)
     convergence = ConvergenceStrategy(evaluator.score, evaluator.score)
 
+    critic = None
+    critic_model = None
+    if selector:
+        critic_model = selector.model_for_role("critic")
+    if critic_model:
+        if config.provider.lower() == "openai":
+            critic_llm_provider = OpenAILLMProvider(
+                api_key=config.api_key or os.getenv("OPENAI_API_KEY"),
+                model=critic_model,
+                max_retries=config.max_retries,
+            )
+        else:
+            critic_llm_provider = OpenRouterLLMProvider(
+                api_key=config.api_key or os.getenv("OPENROUTER_API_KEY"),
+                model=critic_model,
+                max_retries=config.max_retries,
+            )
+        critic = CriticLLM(critic_llm_provider)
+    elif config.model:
+        critic = CriticLLM(llm)
+
     budget = BudgetManager(default_model, token_limit=config.budget_token_limit)
     cache_manager = CacheManager(
         llm,
@@ -452,4 +491,5 @@ def create_default_engine(config: CoRTConfig) -> RecursiveThinkingEngine:
         metrics_manager=metrics_manager,
         budget_manager=budget,
         conversation_manager=conversation_manager,
+        critic=critic,
     )

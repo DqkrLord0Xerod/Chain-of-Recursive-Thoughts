@@ -4,14 +4,15 @@ import json
 from typing import Dict, List, Optional
 
 import pytest
+import pytest_asyncio
 from unittest.mock import MagicMock
 
 from core.chat_v2 import (
     RecursiveThinkingEngine,
-    AdaptiveThinkingStrategy,
     ThinkingResult,
     ThinkingRound,
 )
+from core.strategies import AdaptiveThinkingStrategy
 from core.providers.cache import InMemoryLRUCache
 from core.context_manager import ContextManager
 from core.recursion import ConvergenceStrategy
@@ -84,6 +85,17 @@ class MockThinkingStrategy:
         return True, "continue"
 
 
+class MockCriticLLM:
+    def __init__(self, score: float = 1.0, improved: Optional[str] = None):
+        self.score = score
+        self.improved = improved
+        self.calls = []
+
+    async def review(self, prompt: str, response: str):
+        self.calls.append((prompt, response))
+        return {"score": self.score, "improved": self.improved}
+
+
 class TestRecursiveThinkingEngine:
     
     @pytest.fixture
@@ -137,7 +149,47 @@ class TestRecursiveThinkingEngine:
             convergence_strategy=convergence,
             model_selector=None,
         )
-        
+
+        return engine
+
+    @pytest_asyncio.fixture
+    async def engine_with_critic(self, mock_tokenizer):
+        llm = MockLLMProvider([
+            "Initial response",
+            json.dumps({
+                "alternatives": ["Alt 1", "Alt 2"],
+                "selection": "1",
+                "thinking": "Alt 1 is better",
+            }),
+        ])
+
+        cache = InMemoryLRUCache(max_size=100)
+        evaluator = MockQualityEvaluator({"Initial response": 0.6, "Alt 1": 0.8})
+
+        context_manager = ContextManager(
+            max_tokens=1000,
+            tokenizer=mock_tokenizer,
+        )
+
+        strategy = MockThinkingStrategy(rounds=1, should_continue_until=1)
+        convergence = ConvergenceStrategy(
+            lambda a, b: evaluator.score(a, b),
+            evaluator.score,
+        )
+
+        critic = MockCriticLLM(score=0.95, improved="Critic improvement")
+
+        engine = RecursiveThinkingEngine(
+            llm=llm,
+            cache=cache,
+            evaluator=evaluator,
+            context_manager=context_manager,
+            thinking_strategy=strategy,
+            convergence_strategy=convergence,
+            model_selector=None,
+            critic=critic,
+        )
+
         return engine
         
     @pytest.mark.asyncio
@@ -230,6 +282,15 @@ class TestRecursiveThinkingEngine:
         assert result.metadata["request_id"] == "test123"
         assert "quality_progression" in result.metadata
         assert "final_quality" in result.metadata
+
+    @pytest.mark.asyncio
+    async def test_critic_overrides_response(self, engine_with_critic):
+        result = await engine_with_critic.think_and_respond(
+            "Prompt",
+            alternatives_per_round=1,
+        )
+
+        assert result.response == "Critic improvement"
 
 
 class TestAdaptiveThinkingStrategy:

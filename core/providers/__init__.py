@@ -23,6 +23,7 @@ from .llm import (
     MultiProviderLLM,
 )
 from .quality import EnhancedQualityEvaluator, SimpleQualityEvaluator
+from .critic import CriticLLM
 from .resilient_llm import ResilientLLMProvider
 
 __all__ = [
@@ -44,4 +45,5 @@ __all__ = [
     "EnhancedQualityEvaluator",
     "SimpleQualityEvaluator",
     "ResilientLLMProvider",
+    "CriticLLM",
 ]
