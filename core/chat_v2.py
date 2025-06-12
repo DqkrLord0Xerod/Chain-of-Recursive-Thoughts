@@ -72,6 +72,8 @@ class CoRTConfig:
     model: str | None = field(default_factory=lambda: settings.model)
     model_policy: Optional[Dict[str, str]] = None
     provider: str = field(default_factory=lambda: settings.llm_provider)
+    providers: Optional[List[str]] = None
+    provider_weights: Optional[List[float]] = None
     max_context_tokens: int = 2000
     cache_size: int = 128
     max_retries: int = 3
