@@ -56,9 +56,10 @@ class MockLLMProvider:
 
 
 class MockQualityEvaluator:
-    def __init__(self, scores: Optional[Dict[str, float]] = None):
+    def __init__(self, scores: Optional[Dict[str, float]] = None, thresholds: Optional[Dict[str, float]] = None):
         self.scores = scores or {}
         self.default_score = 0.5
+        self.thresholds = thresholds or {"overall": 0.9}
         
     def score(self, response: str, prompt: str) -> float:
         return self.scores.get(response, self.default_score)
@@ -236,11 +237,12 @@ class TestAdaptiveThinkingStrategy:
     @pytest.fixture
     def strategy(self):
         llm = MockLLMProvider(["3"])  # Will return "3" for rounds determination
+        evaluator = MockQualityEvaluator(thresholds={"overall": 0.95})
         return AdaptiveThinkingStrategy(
             llm=llm,
+            evaluator=evaluator,
             min_rounds=1,
             max_rounds=5,
-            quality_threshold=0.95,
             improvement_threshold=0.01,
         )
         
@@ -344,7 +346,7 @@ class TestIntegration:
         
         strategy = AdaptiveThinkingStrategy(
             llm=llm,
-            quality_threshold=0.9,
+            evaluator=evaluator,
             improvement_threshold=0.05,
         )
         convergence = ConvergenceStrategy(

@@ -78,6 +78,8 @@ class CoRTConfig:
     budget_token_limit: int = 100000
     enable_parallel_thinking: bool = True
     thinking_strategy: str = "adaptive"
+    quality_thresholds: Optional[Dict[str, float]] = None
+
 
 class RecursiveThinkingEngine:
     """Clean, dependency-injected recursive thinking engine."""
@@ -314,8 +316,7 @@ class RecursiveThinkingEngine:
         )
         
         return result
-        
-        
+
     async def _generate_and_evaluate_alternatives(
         self,
         current_best: str,
@@ -379,7 +380,6 @@ Respond in this JSON format:
             thinking = "JSON parsing failed, using raw response"
 
         return best, alternatives, thinking, response.usage["total_tokens"]
-        
 
 
 def create_default_engine(config: CoRTConfig) -> RecursiveThinkingEngine:
@@ -421,9 +421,9 @@ def create_default_engine(config: CoRTConfig) -> RecursiveThinkingEngine:
         tokenizer=tokenizer,
     )
 
-    evaluator = EnhancedQualityEvaluator()
+    evaluator = EnhancedQualityEvaluator(thresholds=config.quality_thresholds)
 
-    strategy = load_strategy(config.thinking_strategy, llm)
+    strategy = load_strategy(config.thinking_strategy, llm, evaluator)
     convergence = ConvergenceStrategy(evaluator.score, evaluator.score)
 
     budget = BudgetManager(default_model, token_limit=config.budget_token_limit)

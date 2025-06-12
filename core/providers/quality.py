@@ -24,6 +24,7 @@ class EnhancedQualityEvaluator(IQualityEvaluator):
         self,
         embedding_provider: Optional[EmbeddingProvider] = None,
         weights: Optional[Dict[str, float]] = None,
+        thresholds: Optional[Dict[str, float]] = None,
     ):
         self.embedding_provider = embedding_provider
         self.weights = weights or {
@@ -32,6 +33,14 @@ class EnhancedQualityEvaluator(IQualityEvaluator):
             "clarity": 0.20,
             "coherence": 0.15,
             "accuracy": 0.05,
+        }
+        self.thresholds = thresholds or {
+            "overall": 0.92,
+            "relevance": 0.8,
+            "completeness": 0.8,
+            "clarity": 0.8,
+            "coherence": 0.75,
+            "accuracy": 0.7,
         }
         
     def score(self, response: str, prompt: str) -> float:
@@ -327,7 +336,10 @@ class EnhancedQualityEvaluator(IQualityEvaluator):
 
 class SimpleQualityEvaluator(IQualityEvaluator):
     """Simple quality evaluator for testing and fallback."""
-    
+
+    def __init__(self, thresholds: Optional[Dict[str, float]] = None) -> None:
+        self.thresholds = thresholds or {"overall": 0.5}
+
     def score(self, response: str, prompt: str) -> float:
         """Basic scoring based on length and keyword overlap."""
         if not response:

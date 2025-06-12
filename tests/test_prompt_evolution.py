@@ -1,14 +1,14 @@
 import os
 import sys
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))  # noqa: E402
 
-import pytest
+import pytest  # noqa: E402
 
-from core.interfaces import LLMProvider, QualityEvaluator
-from core.providers.cache import InMemoryLRUCache
-from core.recursive_engine_v2 import OptimizedRecursiveEngine
-from monitoring.telemetry import initialize_telemetry
+from core.interfaces import LLMProvider, QualityEvaluator  # noqa: E402
+from core.providers.cache import InMemoryLRUCache  # noqa: E402
+from core.recursive_engine_v2 import OptimizedRecursiveEngine  # noqa: E402
+from monitoring.telemetry import initialize_telemetry  # noqa: E402
 
 
 class DummyLLM(LLMProvider):
@@ -25,6 +25,8 @@ class DummyLLM(LLMProvider):
 
 
 class DummyEval(QualityEvaluator):
+    thresholds = {"overall": 0.9}
+
     def score(self, response: str, prompt: str) -> float:
         return 0.0
 
@@ -44,4 +46,3 @@ async def test_prompt_updates_across_rounds():
 
     await engine.think("second")
     assert llm.calls[1][-1]["content"] == "first -> second"
-

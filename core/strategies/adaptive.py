@@ -4,7 +4,7 @@ from typing import List
 
 import structlog
 
-from core.interfaces import LLMProvider
+from core.interfaces import LLMProvider, QualityEvaluator
 
 from .base import ThinkingStrategy
 
@@ -17,15 +17,22 @@ class AdaptiveThinkingStrategy(ThinkingStrategy):
     def __init__(
         self,
         llm: LLMProvider,
+        evaluator: QualityEvaluator,
+        *,
         min_rounds: int = 1,
         max_rounds: int = 5,
-        quality_threshold: float = 0.95,
+        quality_threshold: float | None = None,
         improvement_threshold: float = 0.01,
     ) -> None:
         self.llm = llm
+        self.evaluator = evaluator
         self.min_rounds = min_rounds
         self.max_rounds = max_rounds
-        self.quality_threshold = quality_threshold
+        self.quality_threshold = (
+            quality_threshold
+            if quality_threshold is not None
+            else evaluator.thresholds.get("overall", 0.9)
+        )
         self.improvement_threshold = improvement_threshold
 
     async def determine_rounds(self, prompt: str) -> int:

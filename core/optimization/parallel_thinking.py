@@ -40,14 +40,18 @@ class ParallelThinkingOptimizer:
         quality_evaluator,
         *,
         max_parallel: int = 3,
-        quality_threshold: float = 0.9,
+        quality_threshold: float | None = None,
         timeout_per_round: float = 10.0,
         enable_progressive: bool = True,
     ):
         self.llm = llm_provider
         self.evaluator = quality_evaluator
         self.max_parallel = max_parallel
-        self.quality_threshold = quality_threshold
+        self.quality_threshold = (
+            quality_threshold
+            if quality_threshold is not None
+            else quality_evaluator.thresholds.get("overall", 0.9)
+        )
         self.timeout_per_round = timeout_per_round
         self.enable_progressive = enable_progressive
         
