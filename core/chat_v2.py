@@ -185,10 +185,13 @@ class RecursiveThinkingEngine:
         thinking_strategy: ThinkingStrategy,
         convergence_strategy: Optional[ConvergenceStrategy] = None,
         model_selector: Optional[ModelSelector] = None,
+        *,
+        cache_manager: Optional[CacheManager] = None,
+        metrics_manager: Optional[MetricsManager] = None,
         metrics_recorder: Optional[MetricsRecorder] = None,
         budget_manager: Optional["BudgetManager"] = None,
         conversation_manager: Optional[ConversationManager] = None,
-    ):
+    ) -> None:
         self.llm = llm
         self.cache = cache
         self.evaluator = evaluator
@@ -200,13 +203,13 @@ class RecursiveThinkingEngine:
         )
         self.model_selector = model_selector
         self.budget_manager = budget_manager
-        self.cache_manager = CacheManager(
+        self.cache_manager = cache_manager or CacheManager(
             llm,
             cache,
             budget_manager=budget_manager,
             model_selector=model_selector,
         )
-        self.metrics = MetricsManager(metrics_recorder)
+        self.metrics = metrics_manager or MetricsManager(metrics_recorder)
         self.conversation = conversation_manager or ConversationManager(
             llm,
             context_manager,
@@ -471,25 +474,6 @@ Respond in this JSON format:
 
         return best, alternatives, thinking, response.usage["total_tokens"]
         
-    async def clear_history(self) -> None:
-        """Clear conversation history."""
-        self.conversation.clear()
-        
-    async def get_history(self) -> List[Dict[str, str]]:
-        """Get current conversation history."""
-        return self.conversation.get()
-        
-    async def save_conversation(self, filepath: str) -> None:
-        """Save conversation to file."""
-        await self.conversation.save(filepath)
-            
-    async def load_conversation(self, filepath: str) -> None:
-        """Load conversation from file."""
-        await self.conversation.load(filepath)
-
-    async def summarize_history(self) -> str:
-        """Summarize the current conversation using the LLM."""
-        return await self.conversation.summarize()
 
 
 def create_default_engine(config: CoRTConfig) -> RecursiveThinkingEngine:
@@ -537,6 +521,18 @@ def create_default_engine(config: CoRTConfig) -> RecursiveThinkingEngine:
     convergence = ConvergenceStrategy(evaluator.score, evaluator.score)
 
     budget = BudgetManager(default_model, token_limit=config.budget_token_limit)
+    cache_manager = CacheManager(
+        llm,
+        cache,
+        budget_manager=budget,
+        model_selector=selector,
+    )
+    metrics_manager = MetricsManager(MetricsRecorder())
+    conversation_manager = ConversationManager(
+        llm,
+        context_manager,
+        budget_manager=budget,
+    )
 
     return RecursiveThinkingEngine(
         llm=llm,
@@ -546,5 +542,8 @@ def create_default_engine(config: CoRTConfig) -> RecursiveThinkingEngine:
         thinking_strategy=strategy,
         convergence_strategy=convergence,
         model_selector=selector,
+        cache_manager=cache_manager,
+        metrics_manager=metrics_manager,
         budget_manager=budget,
+        conversation_manager=conversation_manager,
     )
