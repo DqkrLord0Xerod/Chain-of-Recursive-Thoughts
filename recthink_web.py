@@ -92,16 +92,22 @@ async def send_message(request: MessageRequest):
             resp_text = result.response
             rounds = result.thinking_rounds
             history = result.thinking_history
+            cost_total = result.cost_total
+            cost_this_step = result.cost_this_step
         else:
             resp_text = result["response"]
             rounds = result["thinking_rounds"]
             history = result["thinking_history"]
+            cost_total = result.get("cost_total", 0)
+            cost_this_step = result.get("cost_this_step", 0)
 
         return {
             "session_id": request.session_id,
             "response": resp_text,
             "thinking_rounds": rounds,
             "thinking_history": history,
+            "cost_total": cost_total,
+            "cost_this_step": cost_this_step,
         }
     except Exception as e:
         logger.error(f"Error processing message: {str(e)}")
@@ -150,6 +156,29 @@ async def delete_session(session_id: str):
     return {"status": "deleted", "session_id": session_id}
 
 
+@app.get("/api/cost/{session_id}")
+async def get_cost(session_id: str):
+    """Return current budget usage for a session."""
+    if session_id not in engine_instances:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    manager = engine_instances[session_id].budget_manager
+    if manager is None:
+        return {
+            "session_id": session_id,
+            "token_limit": 0,
+            "tokens_used": 0,
+            "dollars_spent": 0.0,
+        }
+
+    return {
+        "session_id": session_id,
+        "token_limit": manager.token_limit,
+        "tokens_used": manager.tokens_used,
+        "dollars_spent": manager.dollars_spent,
+    }
+
+
 # WebSocket for streaming thinking process
 @app.websocket("/ws/{session_id}")
 async def websocket_endpoint(websocket: WebSocket, session_id: str):
@@ -176,6 +205,8 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                     "thinking_history": [
                         asdict(r) for r in result.thinking_history
                     ],
+                    "cost_total": result.cost_total,
+                    "cost_this_step": result.cost_this_step,
                 })
 
     except WebSocketDisconnect:
