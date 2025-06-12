@@ -36,6 +36,7 @@ from monitoring.telemetry import trace_method, record_thinking_metrics
 
 logger = structlog.get_logger(__name__)
 
+
 class OptimizedRecursiveEngine:
     """
     Highly optimized recursive thinking engine.
@@ -74,7 +75,7 @@ class OptimizedRecursiveEngine:
             llm,
             evaluator,
             max_parallel=3,
-            quality_threshold=0.92,
+            quality_threshold=evaluator.thresholds.get("overall", 0.92),
         ) if enable_parallel else None
 
         self.adaptive_optimizer = AdaptiveThinkingOptimizer(
@@ -505,7 +506,7 @@ def create_optimized_engine(config: CoRTConfig) -> OptimizedRecursiveEngine:
 
     cache = InMemoryLRUCache(max_size=config.cache_size)
 
-    evaluator = EnhancedQualityEvaluator()
+    evaluator = EnhancedQualityEvaluator(thresholds=config.quality_thresholds)
     convergence = ConvergenceStrategy(evaluator.score, evaluator.score)
 
     return OptimizedRecursiveEngine(

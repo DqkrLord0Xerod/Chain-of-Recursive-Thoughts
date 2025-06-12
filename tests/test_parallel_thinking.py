@@ -26,6 +26,8 @@ class DummyLLM(LLMProvider):
 
 
 class DummyEval(QualityEvaluator):
+    thresholds = {"overall": 1.0}
+
     def score(self, response: str, prompt: str) -> float:
         return 0.0
 
@@ -37,7 +39,6 @@ async def test_parallel_generation():
         llm,
         DummyEval(),
         max_parallel=3,
-        quality_threshold=1.0,
         timeout_per_round=1.0,
     )
 
@@ -62,3 +63,10 @@ def test_engine_parallel_flag():
     cfg = CoRTConfig(enable_parallel_thinking=True)
     engine = create_optimized_engine(cfg)
     assert engine.parallel_optimizer is not None
+
+
+def test_threshold_propagation_parallel_engine():
+    cfg = CoRTConfig(enable_parallel_thinking=True, quality_thresholds={"overall": 0.75})
+    engine = create_optimized_engine(cfg)
+    assert engine.evaluator.thresholds["overall"] == 0.75
+    assert engine.parallel_optimizer.quality_threshold == 0.75

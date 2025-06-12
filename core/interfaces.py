@@ -87,7 +87,9 @@ class CacheProvider(Protocol):
 @runtime_checkable
 class QualityEvaluator(Protocol):
     """Protocol for evaluating response quality."""
-    
+
+    thresholds: Dict[str, float]
+
     def score(self, response: str, prompt: str) -> float:
         """Return quality score between 0 and 1."""
         ...

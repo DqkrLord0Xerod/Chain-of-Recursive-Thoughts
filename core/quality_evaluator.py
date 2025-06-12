@@ -11,6 +11,7 @@ class DefaultQualityEvaluator(QualityEvaluator):
 
     def __init__(self, similarity_fn: Callable[[str, str], float]) -> None:
         self.assessor = QualityAssessor(similarity_fn)
+        self.thresholds = {"overall": 0.9}
 
     def score(self, response: str, prompt: str) -> float:
         return self.assessor.comprehensive_score(response, prompt)["overall"]

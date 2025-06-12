@@ -26,6 +26,8 @@ class DummyLLM(LLMProvider):
 
 
 class DummyEvaluator(QualityEvaluator):
+    thresholds = {"overall": 0.9}
+
     def score(self, response: str, prompt: str) -> float:
         return 0.0
 

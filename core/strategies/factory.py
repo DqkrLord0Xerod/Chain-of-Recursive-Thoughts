@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from core.interfaces import LLMProvider
+from core.interfaces import LLMProvider, QualityEvaluator
 
 from .adaptive import AdaptiveThinkingStrategy
 from .fixed import FixedThinkingStrategy
@@ -13,9 +13,14 @@ _STRATEGY_MAP = {
 }
 
 
-def load_strategy(name: str, llm: LLMProvider, **kwargs) -> ThinkingStrategy:
+def load_strategy(
+    name: str,
+    llm: LLMProvider,
+    evaluator: QualityEvaluator,
+    **kwargs,
+) -> ThinkingStrategy:
     """Load a thinking strategy by name with fallback to adaptive."""
     cls = _STRATEGY_MAP.get(name.lower(), AdaptiveThinkingStrategy)
     if cls is FixedThinkingStrategy:
         return cls(**kwargs)
-    return cls(llm, **kwargs)
+    return cls(llm, evaluator, **kwargs)

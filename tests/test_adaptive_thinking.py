@@ -24,6 +24,7 @@ class DummyLLM(LLMProvider):
 class DummyEval(QualityEvaluator):
     def __init__(self, scores):
         self.scores = scores
+        self.thresholds = {"overall": 0.95}
 
     def score(self, response: str, prompt: str) -> float:
         return self.scores.get(response, 0.0)
