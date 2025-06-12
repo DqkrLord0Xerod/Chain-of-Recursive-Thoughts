@@ -30,7 +30,7 @@
   ```
 - Web application:
   ```bash
-  python recthink_web.py       # backend API
+  python recthink_web_v2.py    # backend API
   # In a separate shell
   cd frontend && npm start     # frontend UI
   ```

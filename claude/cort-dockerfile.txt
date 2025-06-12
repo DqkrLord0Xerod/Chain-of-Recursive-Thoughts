@@ -77,7 +77,7 @@ COPY deploy/docker-entrypoint.sh /docker-entrypoint.sh
 ENTRYPOINT ["/docker-entrypoint.sh"]
 
 # Default command
-CMD ["gunicorn", "recthink_web:app", \
+CMD ["gunicorn", "recthink_web_v2:app", \
      "--worker-class", "uvicorn.workers.UvicornWorker", \
      "--workers", "4", \
      "--bind", "0.0.0.0:8000", \

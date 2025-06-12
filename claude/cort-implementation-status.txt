@@ -111,7 +111,7 @@ __all__ = [
 ### 2. Update Existing Code
 The original files need updates to use new architecture:
 - `recursive-thinking-ai.py` → Use new engine
-- `recthink_web.py` → Replace with `recthink_web_v2.py`
+- Use `recthink_web_v2.py` for the API server
 - Frontend code → Update API calls
 
 ### 3. Environment Setup
