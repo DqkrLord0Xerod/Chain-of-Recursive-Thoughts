@@ -4,12 +4,14 @@ from core.interfaces import LLMProvider, QualityEvaluator
 
 from .adaptive import AdaptiveThinkingStrategy
 from .fixed import FixedThinkingStrategy
+from .hybrid import HybridToolStrategy
 from .base import ThinkingStrategy
 
 
 _STRATEGY_MAP = {
     "adaptive": AdaptiveThinkingStrategy,
     "fixed": FixedThinkingStrategy,
+    "hybrid": HybridToolStrategy,
 }
 
 

@@ -25,6 +25,8 @@ class ThinkingMetrics:
     quality_scores: List[float] = field(default_factory=list)
     round_durations: List[float] = field(default_factory=list)
     token_usage_per_round: List[int] = field(default_factory=list)
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
     alternatives_generated: List[int] = field(default_factory=list)
     cache_hits: int = 0
     cache_misses: int = 0
@@ -40,7 +42,10 @@ class ThinkingMetrics:
     @property
     def total_tokens(self) -> int:
         """Total tokens used."""
-        return sum(self.token_usage_per_round)
+        total = self.prompt_tokens + self.completion_tokens
+        if total == 0:
+            return sum(self.token_usage_per_round)
+        return total
 
     @property
     def quality_improvement(self) -> float:

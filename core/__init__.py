@@ -10,6 +10,7 @@ from .strategies import AdaptiveThinkingStrategy, load_strategy
 from .recursive_engine_v2 import create_optimized_engine
 from .recursion import ConvergenceStrategy, StatisticalConvergenceStrategy
 from .adaptive_thinking import AdaptiveThinkingAgent
+from .planning import ImprovementPlanner
 
 __all__ = [
     "CoRTConfig",
@@ -21,4 +22,5 @@ __all__ = [
     "ConvergenceStrategy",
     "StatisticalConvergenceStrategy",
     "AdaptiveThinkingAgent",
+    "ImprovementPlanner",
 ]

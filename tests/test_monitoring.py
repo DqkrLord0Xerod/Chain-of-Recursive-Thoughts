@@ -95,7 +95,7 @@ class TestTelemetry:
     def test_record_thinking_metrics(self):
         """Test recording thinking metrics."""
         initialize_telemetry(enable_prometheus=False)
-        
+
         record_thinking_metrics(
             rounds=3,
             duration=5.2,
@@ -103,9 +103,32 @@ class TestTelemetry:
             initial_quality=0.6,
             final_quality=0.9,
             total_tokens=1500,
+            prompt_tokens=600,
+            completion_tokens=900,
         )
-        
+
         # Metrics should be recorded without error
+
+    def test_record_token_breakdown(self):
+        """Ensure prompt and completion tokens are recorded."""
+        initialize_telemetry(enable_prometheus=False)
+        metrics = get_metrics()
+
+        with patch.object(metrics.prompt_tokens, "record") as mock_prompt, \
+                patch.object(metrics.completion_tokens, "record") as mock_comp:
+            record_thinking_metrics(
+                rounds=1,
+                duration=1.0,
+                convergence_reason="test",
+                initial_quality=0.1,
+                final_quality=0.2,
+                total_tokens=100,
+                prompt_tokens=40,
+                completion_tokens=60,
+            )
+
+            mock_prompt.assert_called_once_with(40)
+            mock_comp.assert_called_once_with(60)
         
     def test_record_cache_metrics(self):
         """Test recording cache metrics."""
@@ -165,10 +188,21 @@ class TestThinkingMetrics:
             quality_scores=[0.8],
             token_usage_per_round=[1000],
         )
-        
+
         assert metrics.quality_improvement == 0
         assert metrics.efficiency_score == 0
         assert metrics.convergence_speed == 1.0
+
+    def test_prompt_completion_tokens(self):
+        """Validate total_tokens with prompt/completion fields."""
+        metrics = ThinkingMetrics(
+            session_id="test",
+            start_time=time.time(),
+            prompt_tokens=50,
+            completion_tokens=75,
+        )
+
+        assert metrics.total_tokens == 125
 
 
 class TestMetricsAnalyzer:

@@ -513,24 +513,30 @@
         }
       },
       "targets": [
-    {
-      "expr": "sum by (error_type) (rate(cort_errors_total[5m]))",
-      "refId": "A",
-      "legendFormat": "{{error_type}}"
-    }
-  ],
-  "title": "Error Rate by Type",
-  "type": "timeseries"
+        {
+          "expr": "sum by (error_type) (rate(cort_errors_total[5m]))",
+          "refId": "A",
+          "legendFormat": "{{error_type}}"
+        }
+      ],
+      "title": "Error Rate by Type",
+      "type": "timeseries"
     },
     {
       "datasource": "Prometheus",
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "palette-classic" },
+          "color": {
+            "mode": "palette-classic"
+          },
           "custom": {
             "drawStyle": "line",
             "lineInterpolation": "linear",
-            "hideFrom": { "tooltip": false, "viz": false, "legend": false },
+            "hideFrom": {
+              "tooltip": false,
+              "viz": false,
+              "legend": false
+            },
             "spanNulls": true
           },
           "mappings": [],
@@ -538,11 +544,21 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 32 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 32
+      },
       "id": 9,
       "options": {
-        "legend": { "displayMode": "list", "placement": "bottom" },
-        "tooltip": { "mode": "single" }
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "single"
+        }
       },
       "targets": [
         {
@@ -561,22 +577,38 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "red", "value": null },
-              { "color": "yellow", "value": 10 },
-              { "color": "green", "value": 50 }
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 10
+              },
+              {
+                "color": "green",
+                "value": 50
+              }
             ]
           },
           "unit": "1"
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 32 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 32
+      },
       "id": 10,
       "options": {
         "orientation": "auto",
         "reduceOptions": {
           "values": false,
-          "calcs": ["lastNotNull"],
+          "calcs": [
+            "lastNotNull"
+          ],
           "fields": ""
         },
         "showThresholdLabels": false,
@@ -585,7 +617,10 @@
       },
       "pluginVersion": "8.0.0",
       "targets": [
-        { "expr": "cort_active_sessions", "refId": "A" }
+        {
+          "expr": "cort_active_sessions",
+          "refId": "A"
+        }
       ],
       "title": "Active Sessions",
       "type": "gauge"
@@ -594,11 +629,17 @@
       "datasource": "Prometheus",
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "palette-classic" },
+          "color": {
+            "mode": "palette-classic"
+          },
           "custom": {
             "drawStyle": "line",
             "lineInterpolation": "linear",
-            "hideFrom": { "tooltip": false, "viz": false, "legend": false },
+            "hideFrom": {
+              "tooltip": false,
+              "viz": false,
+              "legend": false
+            },
             "spanNulls": true
           },
           "mappings": [],
@@ -606,11 +647,21 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 40 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 40
+      },
       "id": 11,
       "options": {
-        "legend": { "displayMode": "list", "placement": "bottom" },
-        "tooltip": { "mode": "single" }
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "single"
+        }
       },
       "targets": [
         {
@@ -626,11 +677,17 @@
       "datasource": "Prometheus",
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "palette-classic" },
+          "color": {
+            "mode": "palette-classic"
+          },
           "custom": {
             "drawStyle": "line",
             "lineInterpolation": "linear",
-            "hideFrom": { "tooltip": false, "viz": false, "legend": false },
+            "hideFrom": {
+              "tooltip": false,
+              "viz": false,
+              "legend": false
+            },
             "spanNulls": true
           },
           "mappings": [],
@@ -638,11 +695,21 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 40 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 40
+      },
       "id": 12,
       "options": {
-        "legend": { "displayMode": "list", "placement": "bottom" },
-        "tooltip": { "mode": "single" }
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "single"
+        }
       },
       "targets": [
         {
@@ -658,11 +725,17 @@
       "datasource": "Prometheus",
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "palette-classic" },
+          "color": {
+            "mode": "palette-classic"
+          },
           "custom": {
             "drawStyle": "line",
             "lineInterpolation": "linear",
-            "hideFrom": { "tooltip": false, "viz": false, "legend": false },
+            "hideFrom": {
+              "tooltip": false,
+              "viz": false,
+              "legend": false
+            },
             "spanNulls": true
           },
           "mappings": [],
@@ -670,11 +743,21 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 48 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 48
+      },
       "id": 13,
       "options": {
-        "legend": { "displayMode": "list", "placement": "bottom" },
-        "tooltip": { "mode": "single" }
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "single"
+        }
       },
       "targets": [
         {
@@ -690,17 +773,29 @@
       "datasource": "Prometheus",
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "palette-classic" },
+          "color": {
+            "mode": "palette-classic"
+          },
           "mappings": [],
           "unit": "1"
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 48 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 48
+      },
       "id": 14,
       "options": {
-        "legend": { "displayMode": "list", "placement": "bottom" },
-        "tooltip": { "mode": "single" }
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "single"
+        }
       },
       "targets": [
         {
@@ -711,12 +806,59 @@
       ],
       "title": "Provider Failures",
       "type": "timeseries"
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [],
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 56
+      },
+      "id": 15,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "single"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(cort_prompt_tokens_sum[5m]))",
+          "refId": "A",
+          "legendFormat": "prompt"
+        },
+        {
+          "expr": "sum(rate(cort_completion_tokens_sum[5m]))",
+          "refId": "B",
+          "legendFormat": "completion"
+        }
+      ],
+      "title": "Prompt vs Completion Tokens",
+      "type": "timeseries"
     }
   ],
   "refresh": "5s",
   "schemaVersion": 27,
   "style": "dark",
-  "tags": ["cort", "llm", "monitoring"],
+  "tags": [
+    "cort",
+    "llm",
+    "monitoring"
+  ],
   "templating": {
     "list": []
   },
