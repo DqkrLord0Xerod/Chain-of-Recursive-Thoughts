@@ -25,6 +25,7 @@ from core.providers import (
     InMemoryLRUCache,
     EnhancedQualityEvaluator,
 )
+from core.planning import ImprovementPlanner
 from core.model_policy import ModelSelector
 from core.budget import BudgetManager
 from core.cache_manager import CacheManager
@@ -99,6 +100,7 @@ class RecursiveThinkingEngine:
         metrics_recorder: Optional[MetricsRecorder] = None,
         budget_manager: Optional["BudgetManager"] = None,
         conversation_manager: Optional[ConversationManager] = None,
+        planner: Optional["ImprovementPlanner"] = None,
     ) -> None:
         self.llm = llm
         self.cache = cache
@@ -123,6 +125,7 @@ class RecursiveThinkingEngine:
             context_manager,
             budget_manager=budget_manager,
         )
+        self.planner = planner
         
     async def think_and_respond(
         self,
@@ -218,6 +221,10 @@ class RecursiveThinkingEngine:
                 break
                 
             logger.info("thinking_round_start", round=round_num)
+
+            if self.planner:
+                plan = await self.planner.create_plan(user_input, current_best)
+                metadata.setdefault("improvement_plans", []).append(plan)
             
             # Generate and evaluate alternatives
             best_response, alternatives, explanation, round_tokens = await self._generate_and_evaluate_alternatives(
@@ -439,6 +446,7 @@ def create_default_engine(config: CoRTConfig) -> RecursiveThinkingEngine:
         context_manager,
         budget_manager=budget,
     )
+    planner = ImprovementPlanner(llm)
 
     return RecursiveThinkingEngine(
         llm=llm,
@@ -452,4 +460,5 @@ def create_default_engine(config: CoRTConfig) -> RecursiveThinkingEngine:
         metrics_manager=metrics_manager,
         budget_manager=budget,
         conversation_manager=conversation_manager,
+        planner=planner,
     )
