@@ -28,6 +28,9 @@ from core.providers import (
 )
 from core.model_policy import ModelSelector
 from core.budget import BudgetManager
+from core.cache_manager import CacheManager
+from core.metrics_manager import MetricsManager
+from core.conversation import ConversationManager
 from api import fetch_models
 from config import settings
 import tiktoken
@@ -184,6 +187,7 @@ class RecursiveThinkingEngine:
         model_selector: Optional[ModelSelector] = None,
         metrics_recorder: Optional[MetricsRecorder] = None,
         budget_manager: Optional["BudgetManager"] = None,
+        conversation_manager: Optional[ConversationManager] = None,
     ):
         self.llm = llm
         self.cache = cache
@@ -195,9 +199,19 @@ class RecursiveThinkingEngine:
             evaluator.score,
         )
         self.model_selector = model_selector
-        self.metrics_recorder = metrics_recorder
         self.budget_manager = budget_manager
-        self.conversation_history: List[Dict[str, str]] = []
+        self.cache_manager = CacheManager(
+            llm,
+            cache,
+            budget_manager=budget_manager,
+            model_selector=model_selector,
+        )
+        self.metrics = MetricsManager(metrics_recorder)
+        self.conversation = conversation_manager or ConversationManager(
+            llm,
+            context_manager,
+            budget_manager=budget_manager,
+        )
         
     async def think_and_respond(
         self,
@@ -232,10 +246,10 @@ class RecursiveThinkingEngine:
         
         # Get initial response
         messages = self.context_manager.optimize(
-            self.conversation_history + [{"role": "user", "content": user_input}]
+            self.conversation.get() + [{"role": "user", "content": user_input}]
         )
         
-        initial_response = await self._get_cached_response(
+        initial_response = await self.cache_manager.chat(
             messages,
             temperature=temperature,
             role="assistant",
@@ -345,20 +359,18 @@ class RecursiveThinkingEngine:
             )
             
         # Update conversation history
-        self.conversation_history.append({"role": "user", "content": user_input})
-        self.conversation_history.append({"role": "assistant", "content": current_best})
-        self.conversation_history = self.context_manager.optimize(self.conversation_history)
+        self.conversation.add("user", user_input)
+        self.conversation.add("assistant", current_best)
         
         # Record metrics
         processing_time = time.time() - start_time
         
-        if self.metrics_recorder:
-            self.metrics_recorder.record_run(
-                processing_time=processing_time,
-                token_usage=total_tokens,
-                num_rounds=rounds_completed,
-                convergence_reason=convergence_reason,
-            )
+        self.metrics.record(
+            processing_time=processing_time,
+            token_usage=total_tokens,
+            num_rounds=rounds_completed,
+            convergence_reason=convergence_reason,
+        )
 
         if self.budget_manager:
             cost_total = self.budget_manager.dollars_spent
@@ -394,61 +406,6 @@ class RecursiveThinkingEngine:
         
         return result
         
-    async def _get_cached_response(
-        self,
-        messages: List[Dict[str, str]],
-        temperature: float,
-        role: str,
-    ) -> LLMResponse:
-        """Get response with caching."""
-        
-        # Generate cache key
-        cache_key = self._generate_cache_key(messages, temperature)
-        
-        # Try cache first
-        cached = await self.cache.get(cache_key)
-        if cached:
-            logger.info("cache_hit", key=cache_key[:8])
-            if hasattr(cached, "cached"):
-                cached.cached = True
-            return cached
-            
-        # Call LLM
-        if self.model_selector:
-            self.llm.model = self.model_selector.model_for_role(role)
-
-        response = await self.llm.chat(messages, temperature=temperature)
-
-        if self.budget_manager:
-            if self.budget_manager.will_exceed_budget(response.usage.get("total_tokens", 0)):
-                raise TokenLimitError("Token budget exceeded")
-            self.budget_manager.record_usage(response.usage.get("total_tokens", 0))
-        
-        # Cache the response
-        await self.cache.set(
-            cache_key,
-            response,
-            ttl=3600,  # 1 hour TTL
-            tags=["llm_response"],
-        )
-        
-        return response
-        
-    def _generate_cache_key(
-        self,
-        messages: List[Dict[str, str]],
-        temperature: float,
-    ) -> str:
-        """Generate deterministic cache key."""
-        import hashlib
-        
-        content = json.dumps({
-            "messages": messages,
-            "temperature": temperature,
-            "model": getattr(self.llm, "model", "unknown"),
-        }, sort_keys=True)
-        
-        return hashlib.sha256(content.encode()).hexdigest()
         
     async def _generate_and_evaluate_alternatives(
         self,
@@ -479,12 +436,12 @@ Respond in this JSON format:
 }}"""
 
         messages = self.context_manager.optimize(
-            self.conversation_history + [{"role": "user", "content": batch_prompt}]
+            self.conversation.get() + [{"role": "user", "content": batch_prompt}]
         )
         
-        response = await self._get_cached_response(
+        response = await self.cache_manager.chat(
             messages,
-            temperature,
+            temperature=temperature,
             role="critic",
         )
         
@@ -516,56 +473,23 @@ Respond in this JSON format:
         
     async def clear_history(self) -> None:
         """Clear conversation history."""
-        self.conversation_history.clear()
+        self.conversation.clear()
         
     async def get_history(self) -> List[Dict[str, str]]:
         """Get current conversation history."""
-        return list(self.conversation_history)
+        return self.conversation.get()
         
     async def save_conversation(self, filepath: str) -> None:
         """Save conversation to file."""
-        import aiofiles
-        
-        data = {
-            "conversation": self.conversation_history,
-            "timestamp": time.time(),
-            "metadata": {
-                "model": getattr(self.llm, "model", "unknown"),
-            }
-        }
-        
-        async with aiofiles.open(filepath, 'w') as f:
-            await f.write(json.dumps(data, indent=2))
+        await self.conversation.save(filepath)
             
     async def load_conversation(self, filepath: str) -> None:
         """Load conversation from file."""
-        import aiofiles
-
-        async with aiofiles.open(filepath, 'r') as f:
-            data = json.loads(await f.read())
-
-        self.conversation_history = data.get("conversation", [])
+        await self.conversation.load(filepath)
 
     async def summarize_history(self) -> str:
         """Summarize the current conversation using the LLM."""
-        if not self.conversation_history:
-            return "No conversation yet."
-
-        messages = self.conversation_history + [
-            {
-                "role": "user",
-                "content": "Summarize the conversation so far in a short paragraph.",
-            }
-        ]
-
-        response = await self.llm.chat(messages, temperature=0.5)
-
-        if self.budget_manager:
-            self.budget_manager.record_usage(
-                response.usage.get("total_tokens", 0)
-            )
-
-        return response.content
+        return await self.conversation.summarize()
 
 
 def create_default_engine(config: CoRTConfig) -> RecursiveThinkingEngine:
