@@ -206,6 +206,7 @@ engine = create_optimized_engine(config)
 
 * `docs/EXTENDING.md#custom-providers`
 * `docs/EXTENDING.md#custom-strategies`
+* `docs/STRATEGIES.md` for runtime strategy selection
 
 ---
 
