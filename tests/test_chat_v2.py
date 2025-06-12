@@ -161,7 +161,7 @@ class TestRecursiveThinkingEngine:
         # First interaction
         await engine.think_and_respond("Hello")
         
-        history = await engine.get_history()
+        history = engine.conversation.get()
         assert len(history) == 2  # User + assistant
         assert history[0]["role"] == "user"
         assert history[0]["content"] == "Hello"
@@ -170,7 +170,7 @@ class TestRecursiveThinkingEngine:
         # Second interaction
         await engine.think_and_respond("How are you?")
         
-        history = await engine.get_history()
+        history = engine.conversation.get()
         assert len(history) == 4  # 2 interactions
         
     @pytest.mark.asyncio
@@ -181,7 +181,7 @@ class TestRecursiveThinkingEngine:
         llm_calls_1 = engine.llm.call_count
         
         # Clear history to ensure same context
-        await engine.clear_history()
+        engine.conversation.clear()
         
         # Second call with same prompt
         result2 = await engine.think_and_respond("Test prompt")
@@ -422,7 +422,7 @@ class TestIntegration:
         
         # Save conversation
         save_path = tmp_path / "conversation.json"
-        await engine.save_conversation(str(save_path))
+        await engine.conversation.save(str(save_path))
         
         # Create new engine and load
         new_engine = RecursiveThinkingEngine(
@@ -435,10 +435,10 @@ class TestIntegration:
             model_selector=None,
         )
         
-        await new_engine.load_conversation(str(save_path))
+        await new_engine.conversation.load(str(save_path))
         
         # Verify history is loaded
-        history = await new_engine.get_history()
+        history = new_engine.conversation.get()
         assert len(history) == 4  # 2 exchanges
         assert history[0]["content"] == "Hello"
         assert history[2]["content"] == "How are you?"
