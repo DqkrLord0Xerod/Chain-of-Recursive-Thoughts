@@ -16,6 +16,8 @@ from core.recursive_engine_v2 import (
     create_optimized_engine,
 )
 from monitoring.metrics_v2 import MetricsAnalyzer
+from monitoring.telemetry import initialize_telemetry
+from config.config import load_production_config
 
 app = FastAPI(title="RecThink API v2")
 
@@ -32,6 +34,25 @@ logger = structlog.get_logger(__name__)
 # Global store for chat engines per session
 chat_sessions: Dict[str, "OptimizedRecursiveEngine"] = {}
 metrics_analyzer = MetricsAnalyzer()
+
+
+@app.on_event("startup")
+async def init_telemetry() -> None:
+    """Initialize telemetry using production configuration."""
+    try:
+        cfg = load_production_config()
+    except Exception as exc:  # pragma: no cover - best effort
+        logger.warning("config_load_failed", error=str(exc))
+        initialize_telemetry(enable_prometheus=False)
+        return
+
+    initialize_telemetry(
+        service_name=cfg.app_name,
+        service_version=cfg.app_version,
+        enable_prometheus=cfg.monitoring.metrics_enabled,
+        prometheus_port=cfg.monitoring.prometheus_port,
+        jaeger_endpoint=cfg.monitoring.jaeger_endpoint,
+    )
 
 
 class ChatRequest(BaseModel):
