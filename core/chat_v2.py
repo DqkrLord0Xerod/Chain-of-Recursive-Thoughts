@@ -26,6 +26,7 @@ from core.providers import (
     EnhancedQualityEvaluator,
     OpenRouterEmbeddingProvider,
 )
+from core.planning import ImprovementPlanner
 from core.model_policy import ModelSelector
 from core.budget import BudgetManager
 from core.cache_manager import CacheManager
@@ -105,6 +106,7 @@ class RecursiveThinkingEngine:
         metrics_recorder: Optional[MetricsRecorder] = None,
         budget_manager: Optional["BudgetManager"] = None,
         conversation_manager: Optional[ConversationManager] = None,
+        planner: Optional["ImprovementPlanner"] = None,
         memory_store: Optional["FaissMemoryStore"] = None,
     ) -> None:
         self.llm = llm
@@ -130,6 +132,7 @@ class RecursiveThinkingEngine:
             context_manager,
             budget_manager=budget_manager,
         )
+        self.planner = planner
         self.memory_store = memory_store
         
     async def think_and_respond(
@@ -230,6 +233,10 @@ class RecursiveThinkingEngine:
                 break
                 
             logger.info("thinking_round_start", round=round_num)
+
+            if self.planner:
+                plan = await self.planner.create_plan(user_input, current_best)
+                metadata.setdefault("improvement_plans", []).append(plan)
             
             # Generate and evaluate alternatives
             best_response, alternatives, explanation, round_tokens = await self._generate_and_evaluate_alternatives(
@@ -455,6 +462,7 @@ def create_default_engine(config: CoRTConfig) -> RecursiveThinkingEngine:
         context_manager,
         budget_manager=budget,
     )
+    planner = ImprovementPlanner(llm)
 
     embedding_provider = OpenRouterEmbeddingProvider(
         api_key=config.api_key or os.getenv("OPENROUTER_API_KEY"),
@@ -477,5 +485,6 @@ def create_default_engine(config: CoRTConfig) -> RecursiveThinkingEngine:
         metrics_manager=metrics_manager,
         budget_manager=budget,
         conversation_manager=conversation_manager,
+        planner=planner,
         memory_store=memory_store,
     )
