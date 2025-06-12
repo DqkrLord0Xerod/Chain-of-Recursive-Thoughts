@@ -57,6 +57,8 @@ class ThinkingResult:
     processing_time: float
     convergence_reason: str
     metadata: Dict = field(default_factory=dict)
+    cost_total: float = 0.0
+    cost_this_step: float = 0.0
 
 
 @dataclass
@@ -70,6 +72,7 @@ class CoRTConfig:
     max_context_tokens: int = 2000
     cache_size: int = 128
     max_retries: int = 3
+    budget_token_limit: int = 100000
 
 
 class ThinkingStrategy(Protocol):
@@ -199,8 +202,12 @@ class RecursiveThinkingEngine:
         metadata: Optional[Dict] = None,
     ) -> ThinkingResult:
         """Execute recursive thinking process."""
-        
+
         start_time = time.time()
+        if self.budget_manager:
+            start_cost = self.budget_manager.dollars_spent
+        else:
+            start_cost = 0.0
         metadata = metadata or {}
         
         logger.info(
@@ -332,7 +339,14 @@ class RecursiveThinkingEngine:
                 num_rounds=rounds_completed,
                 convergence_reason=convergence_reason,
             )
-            
+
+        if self.budget_manager:
+            cost_total = self.budget_manager.dollars_spent
+            cost_this_step = cost_total - start_cost
+        else:
+            cost_total = 0.0
+            cost_this_step = 0.0
+
         result = ThinkingResult(
             response=current_best,
             thinking_rounds=rounds_completed,
@@ -345,6 +359,8 @@ class RecursiveThinkingEngine:
                 "quality_progression": quality_scores,
                 "final_quality": quality_scores[-1] if quality_scores else 0,
             },
+            cost_total=cost_total,
+            cost_this_step=cost_this_step,
         )
         
         logger.info(
@@ -554,6 +570,8 @@ def create_default_engine(config: CoRTConfig) -> RecursiveThinkingEngine:
 
     strategy = AdaptiveThinkingStrategy(llm)
 
+    budget = BudgetManager(default_model, token_limit=config.budget_token_limit)
+
     return RecursiveThinkingEngine(
         llm=llm,
         cache=cache,
@@ -561,4 +579,5 @@ def create_default_engine(config: CoRTConfig) -> RecursiveThinkingEngine:
         context_manager=context_manager,
         thinking_strategy=strategy,
         model_selector=selector,
+        budget_manager=budget,
     )
