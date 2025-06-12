@@ -2,6 +2,7 @@ from fastapi import FastAPI, WebSocket, HTTPException, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from config import settings
+from api import fetch_models
 import uvicorn
 import json
 import os
@@ -40,6 +41,8 @@ engine_instances: dict[str, RecursiveThinkingEngine] = {}
 class ChatConfig(BaseModel):
     api_key: str | None = settings.openrouter_api_key
     model: str = settings.model
+    budget_token_limit: int = 100000
+    enforce_budget: bool = True
 
 
 class MessageRequest(BaseModel):
@@ -62,8 +65,17 @@ async def initialize_chat(config: ChatConfig):
         session_id = f"session_{datetime.now().strftime('%Y%m%d%H%M%S')}_{os.urandom(4).hex()}"
         
         # Initialize the engine instance
+        budget_limit = (
+            config.budget_token_limit
+            if config.enforce_budget
+            else 1_000_000_000
+        )
         engine = create_default_engine(
-            CoRTConfig(api_key=config.api_key, model=config.model)
+            CoRTConfig(
+                api_key=config.api_key,
+                model=config.model,
+                budget_token_limit=budget_limit,
+            )
         )
         engine_instances[session_id] = engine
         
@@ -130,6 +142,16 @@ async def save_conversation(request: SaveRequest):
     except Exception as e:
         logger.error(f"Error saving conversation: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to save conversation: {str(e)}")
+
+
+@app.get("/api/models")
+async def list_models():
+    """Return available model metadata."""
+    try:
+        return {"models": fetch_models()}
+    except Exception as e:
+        logger.error(f"Error fetching models: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to fetch models")
 
 
 @app.get("/api/sessions")
