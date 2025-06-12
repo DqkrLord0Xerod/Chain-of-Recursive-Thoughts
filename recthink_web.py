@@ -7,7 +7,7 @@ import uvicorn
 import json
 import os
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List, Dict
 from dataclasses import asdict
 import logging
 
@@ -255,6 +255,51 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                     "cost_this_step": result.cost_this_step,
                 })
 
+    except WebSocketDisconnect:
+        logger.info(f"WebSocket disconnected: {session_id}")
+    except Exception as e:
+        logger.error(f"WebSocket error: {str(e)}")
+        await websocket.send_json({"error": str(e)})
+
+
+# Stream incremental thinking updates
+@app.websocket("/ws/stream/{session_id}")
+async def websocket_stream(websocket: WebSocket, session_id: str):
+    """Stream thinking progress using think_stream."""
+    await websocket.accept()
+
+    if session_id not in engine_instances:
+        await websocket.send_json({"error": "Session not found"})
+        await websocket.close()
+        return
+
+    engine = engine_instances[session_id]
+
+    try:
+        while True:
+            data = await websocket.receive_text()
+            try:
+                payload = json.loads(data)
+                message = payload.get("message")
+                context = payload.get("context")
+            except json.JSONDecodeError:
+                await websocket.send_json({"error": "Invalid JSON"})
+                continue
+
+            try:
+                async for update in engine.think_stream(
+                    message,
+                    context=context,
+                ):
+                    await websocket.send_json(
+                        {
+                            "stage": update.get("stage"),
+                            "response": update.get("response"),
+                            "quality": update.get("quality"),
+                        }
+                    )
+            except Exception as exc:
+                await websocket.send_json({"error": str(exc)})
     except WebSocketDisconnect:
         logger.info(f"WebSocket disconnected: {session_id}")
     except Exception as e:
