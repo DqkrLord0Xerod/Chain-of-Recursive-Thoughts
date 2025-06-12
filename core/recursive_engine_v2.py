@@ -29,6 +29,7 @@ from core.optimization.parallel_thinking import (
     ParallelThinkingOptimizer,
     AdaptiveThinkingOptimizer,
 )
+from core.prompt_evolution import evolve_prompt
 from monitoring.telemetry import trace_method, record_thinking_metrics
 
 
@@ -76,6 +77,8 @@ class OptimizedRecursiveEngine:
         ) if enable_adaptive and self.parallel_optimizer else None
 
         self.enable_compression = enable_compression
+        self.enable_adaptive = enable_adaptive
+        self.prompt_history: List[str] = []
 
         # Semantic cache for similar prompts
         self.semantic_cache: Dict[str, List[Tuple[str, str, float]]] = {}
@@ -116,9 +119,10 @@ class OptimizedRecursiveEngine:
                 "metadata": {"cache_type": "semantic"},
             }
 
-        # Compress prompt if needed
+        # Compress prompt and evolve if enabled
         if self.enable_compression:
-            compressed_prompt = await self._compress_prompt(prompt, context)
+            evolved = evolve_prompt(prompt, self.prompt_history)
+            compressed_prompt = await self._compress_prompt(evolved, context)
         else:
             compressed_prompt = prompt
 
@@ -129,6 +133,7 @@ class OptimizedRecursiveEngine:
         initial_quality = self.evaluator.score(initial_response.content, prompt)
         if initial_quality >= target_quality:
             await self._update_semantic_cache(prompt, initial_response.content, initial_quality)
+            self.prompt_history.append(prompt)
             return {
                 "response": initial_response.content,
                 "cached": False,
@@ -174,6 +179,8 @@ class OptimizedRecursiveEngine:
             final_quality=final_quality,
             total_tokens=sum(c.tokens_used for c in candidates) if candidates else 0,
         )
+
+        self.prompt_history.append(prompt)
 
         return {
             "response": best_response,
