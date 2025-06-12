@@ -8,11 +8,10 @@ from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from core.chat_v2 import (
-    CoRTConfig,
-    ThinkingResult,
-    RecursiveThinkingEngine,
-    create_default_engine,
+from core.chat_v2 import CoRTConfig, ThinkingResult
+from core.recursive_engine_v2 import (
+    OptimizedRecursiveEngine,
+    create_optimized_engine,
 )
 
 app = FastAPI(title="RecThink API v2")
@@ -26,7 +25,7 @@ app.add_middleware(
 )
 
 # Global store for chat engines per session
-chat_sessions: Dict[str, "RecursiveThinkingEngine"] = {}
+chat_sessions: Dict[str, "OptimizedRecursiveEngine"] = {}
 
 
 class ChatRequest(BaseModel):
@@ -39,7 +38,7 @@ class ChatRequest(BaseModel):
 @app.post("/chat")
 async def chat_endpoint(request: ChatRequest):
     if request.session_id not in chat_sessions:
-        chat_sessions[request.session_id] = create_default_engine(CoRTConfig())
+        chat_sessions[request.session_id] = create_optimized_engine(CoRTConfig())
 
     engine = chat_sessions[request.session_id]
     try:
@@ -66,7 +65,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
     await websocket.accept()
 
     if session_id not in chat_sessions:
-        chat_sessions[session_id] = create_default_engine(CoRTConfig())
+        chat_sessions[session_id] = create_optimized_engine(CoRTConfig())
 
     engine = chat_sessions[session_id]
 
@@ -112,7 +111,7 @@ async def websocket_stream(websocket: WebSocket, session_id: str):
     await websocket.accept()
 
     if session_id not in chat_sessions:
-        chat_sessions[session_id] = create_default_engine(CoRTConfig())
+        chat_sessions[session_id] = create_optimized_engine(CoRTConfig())
 
     engine = chat_sessions[session_id]
 
