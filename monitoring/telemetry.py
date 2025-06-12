@@ -131,6 +131,12 @@ class CoRTMetrics:
             unit="s",
         )
 
+        self.provider_failures = meter.create_counter(
+            name="cort_provider_failures_total",
+            description="LLM provider failure count",
+            unit="1",
+        )
+
 
 def initialize_telemetry(
     *,
@@ -406,3 +412,15 @@ def record_error(error_type: str, error_message: str) -> None:
         error_type=error_type,
         error_message=error_message,
     )
+
+
+def record_provider_latency(provider: str, latency: float) -> None:
+    """Record latency for a provider."""
+    metrics = get_metrics()
+    metrics.provider_latency.record(latency, {"provider": provider})
+
+
+def record_provider_failure(provider: str, error_type: str) -> None:
+    """Record a provider failure."""
+    metrics = get_metrics()
+    metrics.provider_failures.add(1, {"provider": provider, "error_type": error_type})
