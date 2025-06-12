@@ -15,6 +15,8 @@
 * ⚡ Parallel alternatives to explore diverse reasoning paths
 * 🔌 Modular architecture with pluggable LLM, cache, and strategy layers
 * 📊 Observability-first: built-in metrics, tracing, and resilience support
+* 🗂️ Role-based model policies for fine-grained model selection
+* 💸 Budget caps with real-time cost tracking
 
 ---
 
@@ -157,6 +159,24 @@ The updated `recthink_web_v2.py` server exposes the following endpoints:
 
 Full API reference available in `docs/API_REFERENCE.md`.
 
+### Session setup & cost tracking
+
+Begin a new session via `/api/initialize` with optional parameters:
+
+```bash
+curl -X POST http://localhost:8000/api/initialize \
+  -H "Content-Type: application/json" \
+  -d '{
+        "api_key": "YOUR_KEY",
+        "model": "mistralai/mistral-small-3.1-24b-instruct:free",
+        "budget_token_limit": 5000,
+        "enforce_budget": true
+      }'
+```
+
+Costs are tracked per session and can be queried at `/api/cost/{session_id}`.
+WebSocket responses include `cost_total` and `cost_this_step` for real-time updates.
+
 ---
 
 ## 🔌 Extending CoRT
@@ -167,6 +187,21 @@ Current provider classes include:
 - `OpenRouterLLMProvider`
 - `OpenAILLMProvider`
 - `MultiProviderLLM` and `ResilientLLMProvider` for failover setups.
+
+### Model policies
+
+`ModelSelector` lets you choose specific models for different roles.
+Pass a policy mapping when creating `CoRTConfig`:
+
+```python
+from core.chat_v2 import CoRTConfig, create_default_engine
+
+config = CoRTConfig(
+    api_key="KEY",
+    model_policy={"assistant": "gpt-3.5-turbo", "critic": "gpt-4"},
+)
+engine = create_default_engine(config)
+```
 
 * `docs/EXTENDING.md#custom-providers`
 * `docs/EXTENDING.md#custom-strategies`

@@ -4,7 +4,7 @@
 
 The repository implements an interesting recursive thinking architecture, but suffers from architectural issues like tight coupling, circular dependencies, poor error handling, and inefficient resource usage. The concept is sound, but the implementation needs refactoring for production readiness.
 
-The current API is served by `recthink_web_v2.py` and offers `/chat` and WebSocket endpoints for streaming updates. Providers include both OpenRouter and OpenAI implementations with a resilient wrapper.
+The current API is served by `recthink_web_v2.py` and offers `/chat` and WebSocket endpoints for streaming updates. Providers include both OpenRouter and OpenAI implementations with a resilient wrapper. Recent additions introduce a `ModelSelector` for policy-based role models and a `BudgetManager` that enforces token caps while tracking costs in real time.
 
 ## Critical Issues & Solutions
 
