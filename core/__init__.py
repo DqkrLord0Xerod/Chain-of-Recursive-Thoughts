@@ -8,7 +8,7 @@ from .chat_v2 import (
 )
 from .strategies import AdaptiveThinkingStrategy, load_strategy
 from .recursive_engine_v2 import create_optimized_engine
-from .recursion import ConvergenceStrategy
+from .recursion import ConvergenceStrategy, StatisticalConvergenceStrategy
 from .adaptive_thinking import AdaptiveThinkingAgent
 
 __all__ = [
@@ -19,5 +19,6 @@ __all__ = [
     "create_default_engine",
     "create_optimized_engine",
     "ConvergenceStrategy",
+    "StatisticalConvergenceStrategy",
     "AdaptiveThinkingAgent",
 ]

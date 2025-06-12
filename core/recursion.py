@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from typing import Callable, Dict, List, Tuple
-from statistics import mean
+from statistics import mean, pstdev
 import re
 
 
@@ -31,6 +31,40 @@ class TrendConvergenceStrategy:
         return (recent_avg - prev_avg) < self.improvement_threshold
 
 
+class StatisticalConvergenceStrategy(TrendConvergenceStrategy):
+    """Advanced strategy using simple statistics to detect convergence."""
+
+    def __init__(
+        self,
+        similarity_threshold: float = 0.95,
+        improvement_threshold: float = 0.01,
+        oscillation_threshold: float = 0.95,
+        window: int = 3,
+        stddev_threshold: float = 0.005,
+    ) -> None:
+        super().__init__(
+            similarity_threshold,
+            improvement_threshold,
+            oscillation_threshold,
+            window,
+        )
+        self.stddev_threshold = stddev_threshold
+
+    def detect_statistical(self, scores: List[float]) -> bool:
+        """Detect convergence via slope and variance reduction."""
+        if len(scores) < self.window:
+            return False
+        recent = scores[-self.window:]
+        n = len(recent)
+        x_mean = mean(range(n))
+        y_mean = mean(recent)
+        denominator = sum((i - x_mean) ** 2 for i in range(n))
+        if denominator == 0:
+            return False
+        slope = sum((i - x_mean) * (y - y_mean) for i, y in enumerate(recent)) / denominator
+        return abs(slope) < self.improvement_threshold and pstdev(recent) < self.stddev_threshold
+
+
 class ConvergenceTracker:
     """Track response quality using rolling statistics to detect convergence."""
 
@@ -46,6 +80,7 @@ class ConvergenceTracker:
         self.strategy = strategy or TrendConvergenceStrategy()
         self.history_size = history_size
         self.history: List[Tuple[str, float]] = []
+        self.reason_history: List[str] = []
 
     def add(self, response: str, prompt: str) -> None:
         """Add a response and its quality score to the history."""
@@ -68,6 +103,7 @@ class ConvergenceTracker:
 
     def should_continue(self, prompt: str) -> Tuple[bool, str]:
         if len(self.history) < 2:
+            self.reason_history.append("insufficient history")
             return True, "insufficient history"
 
         prev_resp, _ = self.history[-2]
@@ -75,10 +111,17 @@ class ConvergenceTracker:
 
         similarity = self.similarity_fn(prev_resp, curr_resp)
         if similarity >= self.strategy.similarity_threshold:
+            self.reason_history.append("converged")
             return False, "converged"
 
         scores = [s for _, s in self.history]
+        if getattr(self.strategy, "detect_statistical", None):
+            if self.strategy.detect_statistical(scores):
+                self.reason_history.append("statistical convergence")
+                return False, "statistical convergence"
+
         if self.strategy.detect_plateau(scores):
+            self.reason_history.append("quality plateau")
             return False, "quality plateau"
 
         for old_resp, _ in self.history[:-2]:
@@ -86,8 +129,10 @@ class ConvergenceTracker:
                 self.similarity_fn(old_resp, curr_resp)
                 >= self.strategy.oscillation_threshold
             ):
+                self.reason_history.append("oscillation")
                 return False, "oscillation"
 
+        self.reason_history.append("continue")
         return True, "continue"
 
 
@@ -144,11 +189,13 @@ class ConvergenceStrategy:
         oscillation_threshold: float = 0.95,
         window: int = 3,
         history_size: int = 5,
+        advanced: bool = False,
     ) -> None:
+        strategy_cls = StatisticalConvergenceStrategy if advanced else TrendConvergenceStrategy
         self._tracker = ConvergenceTracker(
             similarity_fn,
             score_fn,
-            strategy=TrendConvergenceStrategy(
+            strategy=strategy_cls(
                 similarity_threshold,
                 improvement_threshold,
                 oscillation_threshold,
@@ -172,3 +219,7 @@ class ConvergenceStrategy:
     @property
     def rolling_average(self) -> float:
         return self._tracker.rolling_average
+
+    @property
+    def reason_history(self) -> List[str]:
+        return self._tracker.reason_history

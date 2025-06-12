@@ -507,7 +507,11 @@ def create_optimized_engine(config: CoRTConfig) -> OptimizedRecursiveEngine:
     cache = InMemoryLRUCache(max_size=config.cache_size)
 
     evaluator = EnhancedQualityEvaluator(thresholds=config.quality_thresholds)
-    convergence = ConvergenceStrategy(evaluator.score, evaluator.score)
+    convergence = ConvergenceStrategy(
+        evaluator.score,
+        evaluator.score,
+        advanced=config.advanced_convergence,
+    )
 
     return OptimizedRecursiveEngine(
         llm=llm,

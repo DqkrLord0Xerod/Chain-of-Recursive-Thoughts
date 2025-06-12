@@ -10,6 +10,7 @@ import os
 
 import structlog
 
+from .strategies import AdaptiveThinkingStrategy
 from core.interfaces import (
     CacheProvider,
     LLMProvider,
@@ -79,6 +80,7 @@ class CoRTConfig:
     enable_parallel_thinking: bool = True
     thinking_strategy: str = "adaptive"
     quality_thresholds: Optional[Dict[str, float]] = None
+    advanced_convergence: bool = False
 
 
 class RecursiveThinkingEngine:
@@ -424,7 +426,11 @@ def create_default_engine(config: CoRTConfig) -> RecursiveThinkingEngine:
     evaluator = EnhancedQualityEvaluator(thresholds=config.quality_thresholds)
 
     strategy = load_strategy(config.thinking_strategy, llm, evaluator)
-    convergence = ConvergenceStrategy(evaluator.score, evaluator.score)
+    convergence = ConvergenceStrategy(
+        evaluator.score,
+        evaluator.score,
+        advanced=config.advanced_convergence,
+    )
 
     budget = BudgetManager(default_model, token_limit=config.budget_token_limit)
     cache_manager = CacheManager(
