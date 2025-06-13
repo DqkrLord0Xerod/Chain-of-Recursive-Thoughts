@@ -5,9 +5,11 @@ from __future__ import annotations
 import json
 import os
 import time
+
 from dataclasses import dataclass, asdict
 from typing import AsyncIterator, Dict, List, Optional, TYPE_CHECKING
 import aiofiles
+
 
 
 import structlog
@@ -22,6 +24,7 @@ if TYPE_CHECKING:  # pragma: no cover - typing helpers
 logger = structlog.get_logger(__name__)
 
 from monitoring.telemetry import record_thinking_metrics
+
 
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -45,7 +48,6 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:  # pragma: no cover - for type hints
     from core.chat_v2 import ThinkingResult
-
 
 
 
@@ -101,7 +103,9 @@ class LoopController:
 
     async def evaluate_step(self, prompt: str, response: str) -> float:
         """Score a response using the engine's evaluator and critic."""
-        return await self.engine._score_response(response, prompt)
+        if hasattr(self.engine, "_score_response"):
+            return await self.engine._score_response(response, prompt)
+        return self.engine.evaluator.score(response, prompt)
 
     async def run_loop(
         self,
@@ -136,6 +140,24 @@ class LoopController:
 
         initial = await self.engine._generate_initial(compressed, context)
         initial_quality = await self.evaluate_step(prompt, initial.content)
+        cont_conv, conv_reason = self.engine.convergence_strategy.update(
+            initial.content,
+            prompt,
+        )
+        if not cont_conv:
+            await self.engine._update_semantic_cache(
+                prompt, initial.content, initial_quality
+            )
+            self.engine.prompt_history.append(prompt)
+            return {
+                "response": initial.content,
+                "cached": False,
+                "thinking_time": time.time() - start_time,
+                "thinking_rounds": 0,
+                "initial_quality": initial_quality,
+                "final_quality": initial_quality,
+                "metadata": {"early_stop": conv_reason},
+            }
         if initial_quality >= target_quality:
             await self.engine._update_semantic_cache(
                 prompt, initial.content, initial_quality
@@ -170,6 +192,24 @@ class LoopController:
 
         thinking_time = time.time() - start_time
         final_quality = await self.evaluate_step(prompt, best_response)
+        cont_conv, conv_reason = self.engine.convergence_strategy.update(
+            best_response,
+            prompt,
+        )
+        if not cont_conv:
+            await self.engine._update_semantic_cache(prompt, best_response, final_quality)
+            self.engine.prompt_history.append(prompt)
+            return {
+                "response": best_response,
+                "cached": False,
+                "thinking_time": thinking_time,
+                "thinking_rounds": metrics.get("rounds", 0),
+                "initial_quality": initial_quality,
+                "final_quality": final_quality,
+                "improvement": final_quality - initial_quality,
+                "candidates_evaluated": len(candidates),
+                "metadata": {"early_stop": conv_reason, **metrics},
+            }
         await self.engine._update_semantic_cache(prompt, best_response, final_quality)
 
         record_thinking_metrics(
@@ -259,6 +299,11 @@ class LoopController:
 
         from core.chat_v2 import ThinkingRound, ThinkingResult
 
+        from core.chat_v2 import (
+            ThinkingRound as _ThinkingRound,
+            ThinkingResult as _ThinkingResult,
+        )
+
         start_time = time.time()
         metadata = metadata or {}
         request_id = metadata.get("request_id") or generate_request_id()
@@ -293,9 +338,42 @@ class LoopController:
         best_response = resp.content
         total_tokens = resp.usage.get("total_tokens", 0)
         quality = await self.evaluate_step(prompt, best_response)
+        cont_conv, convergence_reason = self.engine.convergence_strategy.update(best_response, prompt)
+        if not cont_conv:
+            thinking_history = [
+                _ThinkingRound(
+                    round_number=0,
+                    response=best_response,
+                    alternatives=[],
+                    selected=True,
+                    explanation="initial",
+                    quality_score=quality,
+                    duration=0.0,
+                )
+            ]
+            self.engine.conversation.add("user", prompt)
+            self.engine.conversation.add("assistant", best_response)
+            processing_time = time.time() - start_time
+            metadata["quality_progression"] = [quality]
+            metadata["final_quality"] = quality
+            self.engine.metrics.record(
+                processing_time=processing_time,
+                token_usage=total_tokens,
+                num_rounds=0,
+                convergence_reason=convergence_reason,
+            )
+            return _ThinkingResult(
+                response=best_response,
+                thinking_rounds=0,
+                thinking_history=thinking_history,
+                total_tokens=total_tokens,
+                processing_time=processing_time,
+                convergence_reason=convergence_reason,
+                metadata=metadata,
+            )
 
         thinking_history = [
-            ThinkingRound(
+            _ThinkingRound(
                 round_number=0,
                 response=best_response,
                 alternatives=[],
@@ -355,7 +433,7 @@ class LoopController:
                         explanation = "invalid selection"
             quality = await self.evaluate_step(prompt, best_response)
             thinking_history.append(
-                ThinkingRound(
+                _ThinkingRound(
                     round_number=round_num,
                     response=best_response,
                     alternatives=alts,
@@ -367,6 +445,14 @@ class LoopController:
             )
             quality_scores.append(quality)
             responses.append(best_response)
+            cont_conv, conv_reason = self.engine.convergence_strategy.update(
+                best_response,
+                prompt,
+            )
+            if not cont_conv:
+                convergence_reason = conv_reason
+                break
+
             cont, reason = await self.engine.thinking_strategy.should_continue(
                 round_num,
                 quality_scores,
@@ -413,8 +499,12 @@ class LoopController:
             convergence_reason=convergence_reason,
         )
 
+
+        return _ThinkingResult(
+
         from core.chat_v2 import ThinkingResult
         return ThinkingResult(
+
             response=best_response,
             thinking_rounds=len(thinking_history) - 1,
             thinking_history=thinking_history,

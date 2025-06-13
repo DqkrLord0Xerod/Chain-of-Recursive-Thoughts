@@ -17,6 +17,7 @@ def test_convergence_detection():
     strat = ConvergenceStrategy(
         lambda a, b: 1.0 if a == b else 0.0,
         lambda r, p: len(r),
+        max_iterations=3,
     )
     strat.add("one", "p")
     strat.add("one", "p")
@@ -35,6 +36,7 @@ def test_rolling_average_and_plateau_detection():
     strat = ConvergenceStrategy(
         lambda a, b: 0.0,
         lambda r, p: float(r),
+        max_iterations=10,
         improvement_threshold=0.05,
         window=2,
     )

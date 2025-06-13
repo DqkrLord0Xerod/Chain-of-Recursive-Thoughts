@@ -126,6 +126,7 @@ class TestRecursiveThinkingEngine:
         convergence = ConvergenceStrategy(
             lambda a, b: evaluator.score(a, b),
             evaluator.score,
+            max_iterations=3,
         )
 
         engine = RecursiveThinkingEngine(
@@ -352,6 +353,7 @@ class TestIntegration:
         convergence = ConvergenceStrategy(
             lambda a, b: evaluator.score(a, b),
             evaluator.score,
+            max_iterations=3,
         )
 
         engine = RecursiveThinkingEngine(
@@ -406,6 +408,7 @@ class TestIntegration:
         convergence = ConvergenceStrategy(
             lambda a, b: evaluator.score(a, b),
             evaluator.score,
+            max_iterations=2,
         )
 
         engine = RecursiveThinkingEngine(

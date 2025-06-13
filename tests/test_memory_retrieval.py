@@ -102,7 +102,11 @@ async def test_memory_influences_response():
     context_manager = ContextManager(100, tokenizer)
     conversation = ConversationManager(llm, context_manager)
     strategy = MockThinkingStrategy()
-    convergence = ConvergenceStrategy(lambda a, b: 1.0, evaluator.score)
+    convergence = ConvergenceStrategy(
+        lambda a, b: 1.0,
+        evaluator.score,
+        max_iterations=2,
+    )
 
     engine = RecursiveThinkingEngine(
         llm=llm,

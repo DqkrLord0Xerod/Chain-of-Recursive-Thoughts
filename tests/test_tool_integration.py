@@ -1,14 +1,17 @@
-import os, sys
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-import pytest
+import os
+import sys
 
-from core.tools import ToolRegistry, SearchTool, PythonExecutionTool
-from core.strategies import HybridToolStrategy
-from core.chat_v2 import RecursiveThinkingEngine
-from core.context_manager import ContextManager
-from core.recursion import ConvergenceStrategy
-from core.providers.cache import InMemoryLRUCache
-from core.interfaces import LLMProvider, QualityEvaluator
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+
+import pytest  # noqa: E402
+
+from core.tools import ToolRegistry, SearchTool, PythonExecutionTool  # noqa: E402
+from core.strategies import HybridToolStrategy  # noqa: E402
+from core.chat_v2 import RecursiveThinkingEngine  # noqa: E402
+from core.context_manager import ContextManager  # noqa: E402
+from core.recursion import ConvergenceStrategy  # noqa: E402
+from core.providers.cache import InMemoryLRUCache  # noqa: E402
+from core.interfaces import LLMProvider, QualityEvaluator  # noqa: E402
 
 
 class DummyLLM(LLMProvider):
@@ -52,9 +55,12 @@ async def test_hybrid_strategy_invokes_tools():
         context_manager=ContextManager(100, type("Tok", (), {"encode": lambda s, t: t.split()})()),
         tools=registry,
         thinking_strategy=strategy,
-        convergence_strategy=ConvergenceStrategy(lambda a, b: 0.0, lambda r, p: 0.0),
+        convergence_strategy=ConvergenceStrategy(
+            lambda a, b: 0.0,
+            lambda r, p: 0.0,
+            max_iterations=5,
+        ),
     )
 
     await engine.think_and_respond("search: cats")
     assert "cats info" in llm.last_messages[-1]["content"]
-

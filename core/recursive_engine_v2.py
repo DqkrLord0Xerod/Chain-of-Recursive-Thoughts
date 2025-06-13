@@ -82,6 +82,7 @@ class OptimizedRecursiveEngine:
         self.convergence_strategy = convergence_strategy or ConvergenceStrategy(
             lambda a, b: evaluator.score(a, b),
             evaluator.score,
+            max_iterations=5,
         )
 
         # Optimizers
@@ -414,6 +415,7 @@ def create_optimized_engine(config: CoRTConfig) -> OptimizedRecursiveEngine:
     convergence = ConvergenceStrategy(
         evaluator.score,
         evaluator.score,
+        max_iterations=5,
         advanced=config.advanced_convergence,
     )
 
