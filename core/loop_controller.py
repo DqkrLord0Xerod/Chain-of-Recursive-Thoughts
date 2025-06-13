@@ -1,0 +1,276 @@
+"""Controllers for recursive thinking loops."""
+
+from __future__ import annotations
+
+import json
+import time
+from typing import AsyncIterator, Dict, List, Optional
+
+from core.prompt_evolution import evolve_prompt
+from monitoring.telemetry import record_thinking_metrics
+from core.chat_v2 import ThinkingResult, ThinkingRound
+
+
+class LoopController:
+    """Execute the recursive thinking loop for an engine."""
+
+    def __init__(self, engine) -> None:
+        self.engine = engine
+
+    async def evaluate_step(self, prompt: str, response: str) -> float:
+        """Score a response using the engine's evaluator and critic."""
+        return await self.engine._score_response(response, prompt)
+
+    async def run_loop(
+        self,
+        prompt: str,
+        *,
+        context: Optional[List[Dict[str, str]]] = None,
+        max_thinking_time: float = 30.0,
+        target_quality: float = 0.9,
+    ) -> Dict:
+        """Run the optimized thinking loop."""
+        start_time = time.time()
+
+        cached_response = await self.engine._check_semantic_cache(prompt)
+        if cached_response:
+            return {
+                "response": cached_response,
+                "cached": True,
+                "thinking_time": 0.0,
+                "metadata": {"cache_type": "semantic"},
+            }
+
+        if self.engine.enable_compression:
+            evolved = evolve_prompt(prompt, self.engine.prompt_history)
+            compressed = await self.engine._compress_prompt(evolved, context)
+        else:
+            compressed = prompt
+
+        initial = await self.engine._generate_initial(compressed, context)
+        initial_quality = await self.evaluate_step(prompt, initial.content)
+        if initial_quality >= target_quality:
+            await self.engine._update_semantic_cache(
+                prompt, initial.content, initial_quality
+            )
+            self.engine.prompt_history.append(prompt)
+            return {
+                "response": initial.content,
+                "cached": False,
+                "thinking_time": time.time() - start_time,
+                "thinking_rounds": 0,
+                "initial_quality": initial_quality,
+                "final_quality": initial_quality,
+                "metadata": {"early_stop": "initial_good_enough"},
+            }
+
+        prompt_category = self.engine._categorize_prompt(prompt)
+        if getattr(self.engine, "adaptive_optimizer", None) and self.engine.enable_adaptive:
+            best_response, candidates, metrics = await self.engine.adaptive_optimizer.think_adaptive(
+                prompt,
+                initial.content,
+                prompt_category,
+            )
+        elif getattr(self.engine, "parallel_optimizer", None):
+            best_response, candidates, metrics = await self.engine.parallel_optimizer.think_parallel(
+                prompt,
+                initial.content,
+            )
+        else:
+            best_response = initial.content
+            candidates = []
+            metrics = {"rounds": 0}
+
+        thinking_time = time.time() - start_time
+        final_quality = await self.evaluate_step(prompt, best_response)
+        await self.engine._update_semantic_cache(prompt, best_response, final_quality)
+
+        record_thinking_metrics(
+            metrics.get("rounds", 0),
+            thinking_time,
+            metrics.get("convergence_reason", "unknown"),
+            initial_quality,
+            final_quality,
+            sum(c.tokens_used for c in candidates) if candidates else 0,
+        )
+
+        self.engine.prompt_history.append(prompt)
+        return {
+            "response": best_response,
+            "cached": False,
+            "thinking_time": thinking_time,
+            "thinking_rounds": metrics.get("rounds", 0),
+            "initial_quality": initial_quality,
+            "final_quality": final_quality,
+            "improvement": final_quality - initial_quality,
+            "candidates_evaluated": len(candidates),
+            "metadata": metrics,
+        }
+
+    async def run_stream(
+        self, prompt: str, *, context: Optional[List[Dict[str, str]]] = None
+    ) -> AsyncIterator[Dict]:
+        """Yield progress updates for the thinking loop."""
+        start_time = time.time()
+        initial = await self.engine._generate_initial(prompt, context)
+        quality = await self.evaluate_step(prompt, initial.content)
+        yield {
+            "stage": "initial",
+            "response": initial.content,
+            "quality": quality,
+            "elapsed": time.time() - start_time,
+        }
+        if quality >= 0.9:
+            return
+
+        current_best = initial.content
+        current_quality = quality
+        for round_num in range(3):
+            messages = [
+                {
+                    "role": "user",
+                    "content": f"Improve: {prompt}\nCurrent: {current_best}",
+                }
+            ]
+            alternative = await self.engine.llm.chat(
+                messages, temperature=0.7 - round_num * 0.2
+            )
+            alt_quality = await self.evaluate_step(prompt, alternative.content)
+            if alt_quality > current_quality:
+                current_best = alternative.content
+                current_quality = alt_quality
+                yield {
+                    "stage": f"round_{round_num + 1}",
+                    "response": current_best,
+                    "quality": current_quality,
+                    "improvement": current_quality - quality,
+                    "elapsed": time.time() - start_time,
+                }
+            if current_quality >= 0.9:
+                break
+
+    async def respond(
+        self,
+        prompt: str,
+        *,
+        thinking_rounds: Optional[int] = None,
+        alternatives_per_round: int = 3,
+        temperature: float = 0.7,
+        metadata: Optional[Dict[str, object]] = None,
+    ) -> ThinkingResult:
+        """High level loop used by RecursiveThinkingEngine."""
+
+        start_time = time.time()
+        metadata = metadata or {}
+
+        if hasattr(self.engine.thinking_strategy, "preprocess_prompt"):
+            prompt = await self.engine.thinking_strategy.preprocess_prompt(prompt, self.engine)
+
+        memory_messages: List[Dict[str, str]] = []
+        if getattr(self.engine, "memory_store", None):
+            memory_messages = await self.engine.memory_store.retrieve_messages(prompt)
+
+        history = self.engine.conversation.get()
+
+        rounds = thinking_rounds
+        if rounds is None:
+            rounds = await self.engine.thinking_strategy.determine_rounds(prompt)
+
+        messages = memory_messages + history + [{"role": "user", "content": prompt}]
+        resp = await self.engine.cache_manager.chat(messages, temperature=temperature, role="assistant")
+        best_response = resp.content
+        total_tokens = resp.usage.get("total_tokens", 0)
+        quality = await self.evaluate_step(prompt, best_response)
+
+        thinking_history = [
+            ThinkingRound(
+                round_number=0,
+                response=best_response,
+                alternatives=[],
+                selected=True,
+                explanation="initial",
+                quality_score=quality,
+                duration=0.0,
+            )
+        ]
+        quality_scores = [quality]
+        responses = [best_response]
+        convergence_reason = "complete"
+
+        for round_num in range(1, rounds + 1):
+            improve_prompt = (
+                f"Given the prompt:\n{prompt}\nCurrent answer:\n{best_response}\n"
+                f"Provide up to {alternatives_per_round} alternatives as JSON with keys 'alternatives', 'selection', 'thinking'."
+            )
+            messages = memory_messages + history + [{"role": "user", "content": improve_prompt}]
+            alt_resp = await self.engine.cache_manager.chat(messages, temperature=temperature, role="assistant")
+            total_tokens += alt_resp.usage.get("total_tokens", 0)
+            try:
+                data = json.loads(alt_resp.content)
+                alts = data.get("alternatives", [])
+                selection = data.get("selection", "current")
+                explanation = data.get("thinking", "")
+            except json.JSONDecodeError as exc:
+                alts = []
+                selection = "current"
+                explanation = f"JSON parsing failed: {exc}"
+                best_response = alt_resp.content
+            else:
+                if selection != "current":
+                    try:
+                        idx = int(selection) - 1
+                        if 0 <= idx < len(alts):
+                            best_response = alts[idx]
+                        else:
+                            explanation = "selection out of range"
+                    except (ValueError, TypeError):
+                        explanation = "invalid selection"
+            quality = await self.evaluate_step(prompt, best_response)
+            thinking_history.append(
+                ThinkingRound(
+                    round_number=round_num,
+                    response=best_response,
+                    alternatives=alts,
+                    selected=True,
+                    explanation=explanation,
+                    quality_score=quality,
+                    duration=0.0,
+                )
+            )
+            quality_scores.append(quality)
+            responses.append(best_response)
+            cont, reason = await self.engine.thinking_strategy.should_continue(
+                round_num,
+                quality_scores,
+                responses,
+            )
+            convergence_reason = reason
+            if not cont:
+                break
+
+        if getattr(self.engine, "planner", None):
+            plan = await self.engine.planner.create_plan(prompt, best_response)
+            metadata.setdefault("improvement_plans", []).append(plan)
+
+        self.engine.conversation.add("user", prompt)
+        self.engine.conversation.add("assistant", best_response)
+
+        processing_time = time.time() - start_time
+        metadata["quality_progression"] = quality_scores
+        metadata["final_quality"] = quality_scores[-1]
+        self.engine.metrics.record(
+            processing_time=processing_time,
+            token_usage=total_tokens,
+            num_rounds=len(thinking_history) - 1,
+            convergence_reason=convergence_reason,
+        )
+
+        return ThinkingResult(
+            response=best_response,
+            thinking_rounds=len(thinking_history) - 1,
+            thinking_history=thinking_history,
+            total_tokens=total_tokens,
+            processing_time=processing_time,
+            convergence_reason=convergence_reason,
+            metadata=metadata,
+        )
