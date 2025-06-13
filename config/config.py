@@ -145,6 +145,8 @@ class CacheSettings(BaseSettings):
     semantic_cache_enabled: bool = True
     semantic_cache_threshold: float = 0.95
     semantic_cache_max_entries: int = 10000
+    semantic_cache_ttl: int = 3600
+    semantic_cache_min_hits: int = 0
 
     class Config:
         case_sensitive = False
