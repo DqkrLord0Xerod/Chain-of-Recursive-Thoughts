@@ -18,7 +18,7 @@ from core.interfaces import (
 )
 from core.context_manager import ContextManager
 from core.recursion import ConvergenceStrategy
-from core.strategies import ThinkingStrategy, load_strategy  # noqa: F401
+from core.strategies import StrategyFactory, ThinkingStrategy, load_strategy  # noqa: F401
 from monitoring.metrics import MetricsRecorder
 from core.providers import (  # noqa: F401
     OpenRouterLLMProvider,
@@ -86,7 +86,9 @@ class CoRTConfig:
     budget_token_limit: int = 100000
     enable_parallel_thinking: bool = True
     enable_tools: bool = True
-    thinking_strategy: str = "adaptive"
+    thinking_strategy: str = field(
+        default_factory=lambda: settings.thinking_strategy
+    )
     quality_thresholds: Optional[Dict[str, float]] = None
     advanced_convergence: bool = False
     memory_dim: int = 1536
@@ -172,7 +174,47 @@ class RecursiveThinkingEngine:
 
 
 def create_default_engine(config: CoRTConfig) -> RecursiveThinkingEngine:
-    """Compatibility wrapper for existing tests."""
-    from .recursive_engine_v2 import create_optimized_engine
+    """Build a :class:`RecursiveThinkingEngine` using :class:`StrategyFactory`."""
 
-    return create_optimized_engine(config)
+    if config.provider.lower() == "openai":
+        llm = OpenAILLMProvider(
+            api_key=config.api_key or os.getenv("OPENAI_API_KEY"),
+            model=config.model,
+            max_retries=config.max_retries,
+        )
+    else:
+        llm = OpenRouterLLMProvider(
+            api_key=config.api_key or os.getenv("OPENROUTER_API_KEY"),
+            model=config.model,
+            max_retries=config.max_retries,
+        )
+
+    cache = InMemoryLRUCache(max_size=config.cache_size)
+    evaluator = EnhancedQualityEvaluator(thresholds=config.quality_thresholds)
+
+    tokenizer = tiktoken.get_encoding("cl100k_base")
+    context_manager = ContextManager(config.max_context_tokens, tokenizer)
+
+    factory = StrategyFactory(llm, evaluator)
+    strategy = factory.create(config.thinking_strategy)
+
+    convergence = ConvergenceStrategy(
+        evaluator.score,
+        evaluator.score,
+        advanced=config.advanced_convergence,
+    )
+
+    tools = ToolRegistry()
+    if config.enable_tools:
+        tools.register(SearchTool())
+        tools.register(PythonExecutionTool())
+
+    return RecursiveThinkingEngine(
+        llm=llm,
+        cache=cache,
+        evaluator=evaluator,
+        context_manager=context_manager,
+        thinking_strategy=strategy,
+        convergence_strategy=convergence,
+        tools=tools,
+    )
