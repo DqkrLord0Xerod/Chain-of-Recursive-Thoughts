@@ -16,6 +16,7 @@ from core.recursive_engine_v2 import (
     OptimizedRecursiveEngine,
     create_optimized_engine,
 )
+from core.optimization.parallel_thinking import BatchThinkingOptimizer
 from monitoring.metrics_v2 import MetricsAnalyzer, ThinkingMetrics
 from monitoring.telemetry import initialize_telemetry
 from config.config import load_production_config
@@ -63,6 +64,13 @@ class ChatRequest(BaseModel):
     alternatives_per_round: int = 3
 
 
+class BatchChatRequest(BaseModel):
+    session_id: str
+    messages: List[str]
+    thinking_rounds: Optional[int] = None
+    alternatives_per_round: int = 3
+
+
 @app.post("/chat")
 async def chat_endpoint(request: ChatRequest):
     if request.session_id not in chat_sessions:
@@ -99,6 +107,33 @@ async def chat_endpoint(request: ChatRequest):
         "response": result.response,
         "thinking_rounds": result.thinking_rounds,
         "thinking_history": history,
+    }
+
+
+@app.post("/chat/batch")
+async def chat_batch_endpoint(request: BatchChatRequest):
+    if request.session_id not in chat_sessions:
+        chat_sessions[request.session_id] = create_optimized_engine(CoRTConfig())
+
+    engine = chat_sessions[request.session_id]
+    if not engine.parallel_optimizer:
+        raise HTTPException(status_code=400, detail="Parallel thinking disabled")
+
+    batch_opt = BatchThinkingOptimizer(engine.parallel_optimizer)
+
+    start = time.time()
+    try:
+        results = await batch_opt.think_batch(request.messages)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    end = time.time()
+
+    metrics_analyzer.record_batch(len(request.messages), end - start)
+
+    responses = [r[0] for r in results]
+    return {
+        "session_id": request.session_id,
+        "responses": responses,
     }
 
 

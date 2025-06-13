@@ -103,6 +103,10 @@ class MetricsAnalyzer:
         self.token_usage: Deque[int] = deque(maxlen=window_size)
         self.round_counts: Deque[int] = deque(maxlen=window_size)
 
+        # Batch processing metrics
+        self.batch_sizes: Deque[int] = deque(maxlen=window_size)
+        self.throughputs: Deque[float] = deque(maxlen=window_size)
+
         # Convergence tracking
         self.convergence_reasons: Dict[str, int] = defaultdict(int)
 
@@ -155,6 +159,12 @@ class MetricsAnalyzer:
             "anomalies": anomalies,
             "warnings": self._generate_warnings(metrics),
         }
+
+    def record_batch(self, batch_size: int, duration: float) -> None:
+        """Record batch processing metrics."""
+        self.batch_sizes.append(batch_size)
+        throughput = batch_size / duration if duration > 0 else 0.0
+        self.throughputs.append(throughput)
 
     def _detect_anomalies(self, metrics: ThinkingMetrics) -> List[Dict[str, Any]]:
         """Detect anomalies in the session."""
@@ -301,6 +311,8 @@ class MetricsAnalyzer:
             "average_quality": np.mean(self.quality_scores) if self.quality_scores else 0,
             "average_tokens": np.mean(self.token_usage) if self.token_usage else 0,
             "average_rounds": np.mean(self.round_counts) if self.round_counts else 0,
+            "average_batch_size": np.mean(self.batch_sizes) if self.batch_sizes else 0,
+            "average_throughput": np.mean(self.throughputs) if self.throughputs else 0,
             "convergence_distribution": dict(self.convergence_reasons),
             "recent_efficiency": np.mean([s.efficiency_score for s in recent_sessions]),
             "anomaly_rate": len(self.anomalies) / len(self.sessions) if self.sessions else 0,
