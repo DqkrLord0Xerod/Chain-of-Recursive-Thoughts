@@ -80,6 +80,12 @@ This enables:
 3. Run server
    `uvicorn recthink_web_v2:app --reload`
 
+4. Enable structured logging (optional)
+   ```python
+   from monitoring.telemetry import configure_logging
+   configure_logging(level="INFO", fmt="json")
+   ```
+
 For CLI mode, frontend setup, and advanced options, see `docs/USAGE.md`.
 
 ## 🔑 Secret Storage

@@ -126,11 +126,13 @@ class OptimizedRecursiveEngine:
         enable_streaming: bool = False,
     ) -> Dict:
         """Delegate to :class:`LoopController` for the main loop."""
+        metadata = {"request_id": generate_request_id()}
         return await self.loop_controller.run_loop(
             prompt,
             context=context,
             max_thinking_time=max_thinking_time,
             target_quality=target_quality,
+            metadata=metadata,
         )
 
     @trace_method("think_stream")
@@ -141,7 +143,10 @@ class OptimizedRecursiveEngine:
         context: Optional[List[Dict[str, str]]] = None,
     ):
         """Stream progress using :class:`LoopController`."""
-        async for update in self.loop_controller.run_stream(prompt, context=context):
+        metadata = {"request_id": generate_request_id()}
+        async for update in self.loop_controller.run_stream(
+            prompt, context=context, metadata=metadata
+        ):
             yield update
 
     @trace_method("generate_initial")
