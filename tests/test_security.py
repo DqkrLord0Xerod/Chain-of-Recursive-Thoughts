@@ -18,6 +18,11 @@ from core.security.api_security import (
     ValidationError,
     RateLimitError,
 )
+from core.security import OutputFilter
+from core.chat_v2 import RecursiveThinkingEngine, ThinkingStrategy
+from core.context_manager import ContextManager
+from core.providers.cache import InMemoryLRUCache
+from core.interfaces import LLMProvider, QualityEvaluator
 from config.config import load_production_config
 
 
@@ -465,6 +470,61 @@ class TestProductionConfig:
         with patch.dict(os.environ, {"DEBUG": "true"}):
             with pytest.raises(SystemExit):
                 load_production_config()
+
+
+class TestOutputFilter:
+
+    def test_filter_blocks_pattern(self):
+        filt = OutputFilter(blocked_patterns=[r"bad"])
+        with pytest.raises(ValueError):
+            filt.filter("this is bad text")
+
+    def test_filter_masks_pii(self):
+        filt = OutputFilter(mask_pii=True)
+        text = "Contact me at user@example.com with key abcdefghijklmnopqrstuvwx1234567890 and 555-123-4567"
+        result = filt.filter(text)
+        assert "[EMAIL]" in result
+        assert "[REDACTED]" in result
+        assert "[PHONE]" in result
+
+
+class TestEngineOutputFiltering:
+
+    class DummyLLM(LLMProvider):
+        async def chat(self, messages, *, temperature=0.7, **kwargs):
+            return type("Resp", (), {
+                "content": "Reach me at user@example.com",
+                "usage": {"total_tokens": 1},
+                "model": "dummy",
+                "cached": False,
+            })()
+
+    class DummyEvaluator(QualityEvaluator):
+        thresholds = {"overall": 0.5}
+
+        def score(self, response: str, prompt: str) -> float:
+            return 0.5
+
+    class OneRoundStrategy(ThinkingStrategy):
+        async def determine_rounds(self, prompt: str) -> int:
+            return 1
+
+        async def should_continue(self, rounds_completed, quality_scores, responses):
+            return False, "done"
+
+    @pytest.mark.asyncio
+    async def test_engine_applies_filter(self):
+        engine = RecursiveThinkingEngine(
+            llm=self.DummyLLM(),
+            cache=InMemoryLRUCache(max_size=2),
+            evaluator=self.DummyEvaluator(),
+            context_manager=ContextManager(100, type("T", (), {"encode": lambda self, t: t.split()})()),
+            thinking_strategy=self.OneRoundStrategy(),
+            model_selector=None,
+            output_filter=OutputFilter(mask_pii=True),
+        )
+        result = await engine.think_and_respond("hi", thinking_rounds=1, alternatives_per_round=1)
+        assert "[EMAIL]" in result.response
                 
     def test_security_config_validation(self):
         """Test security configuration validation."""
