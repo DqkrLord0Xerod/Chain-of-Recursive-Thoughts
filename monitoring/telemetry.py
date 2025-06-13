@@ -441,15 +441,15 @@ def record_thinking_metrics(
         metrics.token_efficiency.record(total_tokens / rounds)
 
 
-def record_cache_metrics(hit: bool, cache_type: str = "memory") -> None:
+def record_cache_metrics(hit: bool, cache_type: str = "memory", *, count: int = 1) -> None:
     """Record cache hit/miss metrics."""
     metrics = get_metrics()
     labels = {"cache_type": cache_type}
-    
+
     if hit:
-        metrics.cache_hits.add(1, labels)
+        metrics.cache_hits.add(count, labels)
     else:
-        metrics.cache_misses.add(1, labels)
+        metrics.cache_misses.add(count, labels)
 
 
 def record_error(error_type: str, error_message: str) -> None:
