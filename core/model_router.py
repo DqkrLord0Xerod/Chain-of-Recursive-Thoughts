@@ -3,11 +3,13 @@ from __future__ import annotations
 import os
 import random
 from typing import Dict, List, Optional, TYPE_CHECKING
+import asyncio
 
 if TYPE_CHECKING:  # pragma: no cover - import for typing
     from core.chat_v2 import CoRTConfig
 
 from core.model_policy import ModelSelector
+from core.budget import BudgetManager
 from core.providers import (
     OpenAILLMProvider,
     OpenRouterLLMProvider,
@@ -29,6 +31,7 @@ class ModelRouter:
         model: Optional[str] = None,
         selector: Optional[ModelSelector] = None,
         max_retries: int = 3,
+        budget_manager: Optional[BudgetManager] = None,
     ) -> None:
         self.provider = provider
         self.providers = providers or [provider]
@@ -37,10 +40,24 @@ class ModelRouter:
         self.model = model
         self.selector = selector
         self.max_retries = max_retries
+        self.budget_manager = budget_manager
+        self.model_costs: Dict[str, float] = {}
+        if budget_manager:
+            for entry in budget_manager._load_catalog():
+                mid = entry.get("id")
+                pricing = entry.get("pricing", {})
+                prompt = float(pricing.get("prompt", 0))
+                completion = float(pricing.get("completion", 0))
+                cost = (prompt + completion) / 1000.0 if prompt or completion else 0.0
+                if mid:
+                    self.model_costs[mid] = cost
 
     @classmethod
     def from_config(
-        cls, config: "CoRTConfig", selector: Optional[ModelSelector] = None
+        cls,
+        config: "CoRTConfig",
+        selector: Optional[ModelSelector] = None,
+        budget_manager: Optional[BudgetManager] = None,
     ) -> "ModelRouter":
         return cls(
             provider=config.provider,
@@ -50,12 +67,18 @@ class ModelRouter:
             model=config.model,
             selector=selector,
             max_retries=config.max_retries,
+            budget_manager=budget_manager,
         )
 
     def model_for_role(self, role: str) -> str:
-        if self.selector:
-            return self.selector.model_for_role(role)
-        return self.model or ""
+        model = self.selector.model_for_role(role) if self.selector else self.model or ""
+        if self.budget_manager and self.model_costs:
+            remaining = self.budget_manager.remaining_tokens
+            threshold = 0.2 * self.budget_manager.token_limit
+            if remaining <= threshold:
+                cheapest = min(self.model_costs, key=self.model_costs.get)
+                model = cheapest
+        return model
 
     def _build_single_provider(self, name: str, model: str) -> LLMProvider:
         if name.lower() == "openai":
@@ -72,14 +95,26 @@ class ModelRouter:
 
     def provider_for_role(self, role: str) -> LLMProvider:
         model = self.model_for_role(role)
-        if len(self.providers) == 1:
-            return self._build_single_provider(self.providers[0], model)
+        health = {}
+        try:
+            health = asyncio.run(self.provider_health())
+        except RuntimeError:
+            # Fallback if running loop is active
+            health = {}
+        available = [p for p in self.providers if health.get(p, True)]
+        if not available:
+            available = list(self.providers)
+
+        if len(available) == 1:
+            return self._build_single_provider(available[0], model)
 
         if self.provider_weights and len(self.provider_weights) == len(self.providers):
-            choice = random.choices(self.providers, weights=self.provider_weights, k=1)[0]
+            weight_map = dict(zip(self.providers, self.provider_weights))
+            weights = [weight_map[p] for p in available]
+            choice = random.choices(available, weights=weights, k=1)[0]
             return self._build_single_provider(choice, model)
 
-        providers = [self._build_single_provider(p, model) for p in self.providers]
+        providers = [self._build_single_provider(p, model) for p in available]
         return MultiProviderLLM(providers)
 
     async def provider_health(self) -> Dict[str, bool]:

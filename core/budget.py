@@ -67,3 +67,13 @@ class BudgetManager:
 
     # Backwards compatibility
     record_usage = record_llm_usage
+
+    @property
+    def cost_per_token(self) -> float:
+        """Return cost per token for the configured model."""
+        return self._cost_per_token
+
+    @property
+    def remaining_tokens(self) -> int:
+        """Return the number of tokens remaining in the budget."""
+        return max(self.token_limit - self.tokens_used, 0)
