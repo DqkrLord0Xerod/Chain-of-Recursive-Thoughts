@@ -199,14 +199,11 @@ def create_default_engine(
         metadata = fetch_models()
         selector = ModelSelector(metadata, config.model_policy)
 
-    router = router or ModelRouter.from_config(config, selector)
-    llm = router.provider_for_role("assistant")
-
-    cache = InMemoryLRUCache(max_size=config.cache_size)
-    evaluator = EnhancedQualityEvaluator(thresholds=config.quality_thresholds)
-
     tokenizer = tiktoken.get_encoding("cl100k_base")
     ctx_mgr = ContextManager(config.max_context_tokens, tokenizer)
+
+    strategy = StrategyFactory(llm, evaluator).create(config.thinking_strategy)
+
 
     strategy = load_strategy(config.thinking_strategy, llm, evaluator)
     convergence = ConvergenceStrategy(
@@ -227,7 +224,4 @@ def create_default_engine(
         context_manager=ctx_mgr,
         thinking_strategy=strategy,
         convergence_strategy=convergence,
-        model_router=router,
-        budget_manager=budget_manager,
-        tools=tools,
     )
