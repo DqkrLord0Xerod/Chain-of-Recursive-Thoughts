@@ -17,7 +17,7 @@ from core.recursive_engine_v2 import (
     create_optimized_engine,
 )
 from monitoring.metrics_v2 import MetricsAnalyzer, ThinkingMetrics
-from monitoring.telemetry import initialize_telemetry
+from monitoring.telemetry import initialize_telemetry, instrument_fastapi
 from config.config import load_production_config
 
 app = FastAPI(title="RecThink API v2")
@@ -54,6 +54,7 @@ async def init_telemetry() -> None:
         prometheus_port=cfg.monitoring.prometheus_port,
         jaeger_endpoint=cfg.monitoring.jaeger_endpoint,
     )
+    instrument_fastapi(app)
 
 
 class ChatRequest(BaseModel):
@@ -153,6 +154,12 @@ async def provider_health() -> Dict[str, List[Dict[str, object]]]:
     health = metrics_analyzer.get_provider_health()
     logger.info("provider_health_status", providers=health)
     return {"providers": health}
+
+
+@app.get("/health")
+async def health() -> Dict[str, str]:
+    """Basic health check for service availability."""
+    return {"status": "ok"}
 
 
 @app.websocket("/ws/stream/{session_id}")
