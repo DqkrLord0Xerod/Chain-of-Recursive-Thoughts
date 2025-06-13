@@ -5,6 +5,9 @@ import asyncio
 import pytest
 import importlib.util
 import os
+from core.cache_manager import CacheManager
+from core.providers.cache import InMemoryLRUCache
+from config.config import CacheSettings
 
 ROOT = os.path.dirname(os.path.dirname(__file__))
 sys.path.insert(0, ROOT)
@@ -184,3 +187,88 @@ def test_connection_pool(monkeypatch):
     cache = RedisCacheProvider("redis://localhost")
     assert cache.pool.url == "redis://localhost"
     assert cache.redis.connection_pool == cache.pool
+
+
+class DummyEmbeddingProvider:
+    async def embed(self, texts):
+        vocab = ["hello", "world", "there", "foo", "bar"]
+        res = []
+        for text in texts:
+            words = text.lower().split()
+            vec = [float(words.count(v)) for v in vocab]
+            res.append(vec)
+        return res
+
+    async def similarity(self, text1, text2):
+        [v1, v2] = await self.embed([text1, text2])
+        return sum(a * b for a, b in zip(v1, v2)) / (
+            (sum(a * a for a in v1) ** 0.5) * (sum(b * b for b in v2) ** 0.5)
+        )
+
+
+class DummyLLM:
+    def __init__(self):
+        self.calls = 0
+
+    async def chat(self, messages, temperature=0.7, **kwargs):
+        self.calls += 1
+        return types.SimpleNamespace(
+            content="resp" + str(self.calls),
+            usage={"total_tokens": 1},
+            model="test",
+            cached=False,
+        )
+
+
+@pytest.mark.asyncio
+async def test_semantic_cache_hit():
+    provider = DummyEmbeddingProvider()
+    llm = DummyLLM()
+    cache = InMemoryLRUCache(max_size=10)
+    settings = CacheSettings(
+        semantic_cache_enabled=True,
+        semantic_cache_threshold=0.8,
+        semantic_cache_max_entries=10,
+        semantic_cache_ttl=60,
+    )
+    manager = CacheManager(
+        llm,
+        cache,
+        embedding_provider=provider,
+        cache_settings=settings,
+    )
+
+    msg1 = [{"role": "user", "content": "hello world"}]
+    r1 = await manager.chat(msg1, temperature=0.1, role="assistant")
+    assert r1.cached is False
+    msg2 = [{"role": "user", "content": "hello world!"}]
+    r2 = await manager.chat(msg2, temperature=0.1, role="assistant")
+    assert r2.cached is True
+    assert llm.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_semantic_cache_ttl_eviction():
+    provider = DummyEmbeddingProvider()
+    llm = DummyLLM()
+    cache = InMemoryLRUCache(max_size=10)
+    settings = CacheSettings(
+        semantic_cache_enabled=True,
+        semantic_cache_threshold=0.8,
+        semantic_cache_max_entries=10,
+        semantic_cache_ttl=1,
+    )
+    manager = CacheManager(
+        llm,
+        cache,
+        embedding_provider=provider,
+        cache_settings=settings,
+    )
+
+    msg = [{"role": "user", "content": "hello there"}]
+    await manager.chat(msg, temperature=0.1, role="assistant")
+    # force expiry
+    for entry in manager._semantic_entries.values():
+        entry["accessed_at"] -= 2
+    await manager.chat(msg, temperature=0.1, role="assistant")
+    assert llm.calls == 2

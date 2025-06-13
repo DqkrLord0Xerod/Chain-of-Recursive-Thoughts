@@ -4,9 +4,9 @@ from typing import List
 
 import structlog
 
-from core.interfaces import LLMProvider, QualityEvaluator
+from core.interfaces import LLMProvider
 
-from .base import ThinkingStrategy
+from .base import ThinkingStrategy, QualityEvaluator
 
 logger = structlog.get_logger(__name__)
 

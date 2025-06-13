@@ -13,6 +13,8 @@ from opentelemetry import trace, metrics
 from opentelemetry.exporter.prometheus import PrometheusMetricReader
 from opentelemetry.instrumentation.aiohttp_client import AioHttpClientInstrumentor
 from opentelemetry.instrumentation.requests import RequestsInstrumentor
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+from fastapi import FastAPI
 from opentelemetry.metrics import Histogram, Counter, UpDownCounter
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.resources import Resource
@@ -470,3 +472,12 @@ def record_provider_failure(provider: str, error_type: str) -> None:
     """Record a provider failure."""
     metrics = get_metrics()
     metrics.provider_failures.add(1, {"provider": provider, "error_type": error_type})
+
+
+def instrument_fastapi(app: "FastAPI", *, excluded_urls: str = "/docs,/openapi.json") -> None:
+    """Attach OpenTelemetry tracing middleware to a FastAPI app."""
+    FastAPIInstrumentor().instrument_app(
+        app,
+        tracer_provider=trace.get_tracer_provider(),
+        excluded_urls=excluded_urls,
+    )
