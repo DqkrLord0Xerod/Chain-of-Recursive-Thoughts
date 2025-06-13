@@ -72,12 +72,21 @@ This enables:
    APP_ENV=development
    FRONTEND_URL=http://localhost:3000
    ```
+   Secrets can also be stored in an encrypted `secrets.json` file. The
+   ``CredentialManager`` will automatically decrypt and load this file when
+   `SECRETS_KEY` and `SECRETS_FILE` are provided.
    See `config/config.py` for all available options.
 
 3. Run server
    `uvicorn recthink_web_v2:app --reload`
 
 For CLI mode, frontend setup, and advanced options, see `docs/USAGE.md`.
+
+## 🔑 Secret Storage
+
+`CredentialManager` can load API keys from a secrets backend or an encrypted
+`secrets.json` file. Set the path to the file in `SECRETS_FILE` and provide the
+decryption key via `SECRETS_KEY`. Environment variables still take precedence.
 
 ---
 

@@ -11,6 +11,7 @@ from .api_security import (
     ValidationError,
     RateLimitError,
 )
+from .credential_manager import CredentialManager
 
 __all__ = [
     "APIKeyManager",
@@ -22,4 +23,5 @@ __all__ = [
     "SecurityError",
     "ValidationError",
     "RateLimitError",
+    "CredentialManager",
 ]

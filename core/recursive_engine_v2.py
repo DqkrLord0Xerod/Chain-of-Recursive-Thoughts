@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 from typing import Dict, List, Optional, Tuple
 
 import structlog
@@ -32,9 +31,13 @@ from core.optimization.parallel_thinking import (
 from core.recursion import ConvergenceStrategy
 from core.loop_controller import LoopController
 from monitoring.telemetry import trace_method
+from core.security import CredentialManager
 
 
 logger = structlog.get_logger(__name__)
+
+
+credential_manager = CredentialManager()
 
 
 class OptimizedRecursiveEngine:
@@ -370,13 +373,13 @@ def create_optimized_engine(config: CoRTConfig) -> OptimizedRecursiveEngine:
 
     if config.provider.lower() == "openai":
         llm = OpenAILLMProvider(
-            api_key=config.api_key or os.getenv("OPENAI_API_KEY"),
+            api_key=config.api_key or credential_manager.get("OPENAI_API_KEY"),
             model=default_model,
             max_retries=config.max_retries,
         )
     else:
         llm = OpenRouterLLMProvider(
-            api_key=config.api_key or os.getenv("OPENROUTER_API_KEY"),
+            api_key=config.api_key or credential_manager.get("OPENROUTER_API_KEY"),
             model=default_model,
             max_retries=config.max_retries,
         )
@@ -386,13 +389,13 @@ def create_optimized_engine(config: CoRTConfig) -> OptimizedRecursiveEngine:
         critic_model = selector.model_for_role("critic")
         if config.provider.lower() == "openai":
             critic_provider = OpenAILLMProvider(
-                api_key=config.api_key or os.getenv("OPENAI_API_KEY"),
+                api_key=config.api_key or credential_manager.get("OPENAI_API_KEY"),
                 model=critic_model,
                 max_retries=config.max_retries,
             )
         else:
             critic_provider = OpenRouterLLMProvider(
-                api_key=config.api_key or os.getenv("OPENROUTER_API_KEY"),
+                api_key=config.api_key or credential_manager.get("OPENROUTER_API_KEY"),
                 model=critic_model,
                 max_retries=config.max_retries,
             )
