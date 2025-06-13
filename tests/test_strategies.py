@@ -1,8 +1,10 @@
+import inspect
 import pytest
 from core.strategies import (
     load_strategy,
     AdaptiveThinkingStrategy,
     FixedThinkingStrategy,
+    HybridToolStrategy,
 )
 from core.strategies.base import ThinkingStrategy
 from mypy import api
@@ -30,7 +32,7 @@ async def test_load_strategy_known():
     llm = DummyLLM()
     strat = load_strategy("fixed", llm, DummyEvaluator(), rounds=2)
     assert isinstance(strat, FixedThinkingStrategy)
-    rounds = await strat.determine_rounds("test")
+    rounds = await strat.determine_rounds("test", request_id="1")
     assert rounds == 2
 
 
@@ -71,13 +73,29 @@ from typing import List
 
 
 class Dummy(ThinkingStrategy):
-    async def determine_rounds(self, prompt: str) -> int:
+    async def determine_rounds(self, prompt: str, *, request_id: str) -> int:
         return 1
 
-    async def should_continue(self, rounds_completed: int, quality_scores: List[float], responses: List[str]) -> tuple[bool, str]:
+    async def should_continue(
+        self,
+        rounds_completed: int,
+        quality_scores: List[float],
+        responses: List[str],
+        *,
+        request_id: str,
+    ) -> tuple[bool, str]:
         return False, 'done'
 """
     path = tmp_path / "snippet.py"
     path.write_text(code)
     result = api.run([str(path)])
     assert result[2] == 0, result[0]
+
+
+def test_strategy_method_signatures():
+    base_sig = inspect.signature(ThinkingStrategy.determine_rounds)
+    strategies = [AdaptiveThinkingStrategy, FixedThinkingStrategy, HybridToolStrategy]
+    for strat_cls in strategies:
+        sig = inspect.signature(strat_cls.determine_rounds)
+        assert sig == base_sig
+        assert hasattr(strat_cls, "should_continue")

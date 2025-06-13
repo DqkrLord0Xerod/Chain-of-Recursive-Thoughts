@@ -190,6 +190,7 @@ def create_default_engine(
     *,
     router: Optional[ModelRouter] = None,
     budget_manager: Optional[BudgetManager] = None,
+    output_filter: Optional[OutputFilter] = None,
 ) -> RecursiveThinkingEngine:
     """Build a :class:`RecursiveThinkingEngine` from configuration."""
 
@@ -233,4 +234,8 @@ def create_default_engine(
         thinking_strategy=strategy,
         convergence_strategy=convergence,
         tools=tools,
+        model_router=router,
+        budget_manager=budget_manager,
+        tools=tools,
+        output_filter=output_filter,
     )

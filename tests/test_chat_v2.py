@@ -70,7 +70,7 @@ class MockThinkingStrategy:
         self.rounds = rounds
         self.should_continue_until = should_continue_until
         
-    async def determine_rounds(self, prompt: str) -> int:
+    async def determine_rounds(self, prompt: str, *, request_id: str) -> int:
         return self.rounds
         
     async def should_continue(
@@ -78,6 +78,8 @@ class MockThinkingStrategy:
         rounds_completed: int,
         quality_scores: List[float],
         responses: List[str],
+        *,
+        request_id: str,
     ) -> tuple[bool, str]:
         if rounds_completed >= self.should_continue_until:
             return False, "test_complete"
@@ -250,7 +252,10 @@ class TestAdaptiveThinkingStrategy:
     @pytest.mark.asyncio
     async def test_determine_rounds(self, strategy):
         """Test adaptive round determination."""
-        rounds = await strategy.determine_rounds("Complex prompt")
+        rounds = await strategy.determine_rounds(
+            "Complex prompt",
+            request_id="test",
+        )
         assert 1 <= rounds <= 5
         assert rounds == 3  # Based on mock response
         
