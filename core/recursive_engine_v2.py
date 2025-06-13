@@ -17,6 +17,7 @@ from core.interfaces import (
 from core.chat_v2 import CoRTConfig
 from core.model_policy import ModelSelector
 from core.model_router import ModelRouter
+from core.budget import BudgetManager
 from api import fetch_models
 from core.providers import (
     InMemoryLRUCache,
@@ -54,11 +55,12 @@ class OptimizedRecursiveEngine:
 
     def __init__(
         self,
-        llm: Optional[LLMProvider],
+        llm: LLMProvider,
         cache: CacheProvider,
         evaluator: QualityEvaluator,
         *,
         model_router: Optional[ModelRouter] = None,
+        budget_manager: Optional[BudgetManager] = None,
         critic: Optional[CriticLLM] = None,
         enable_parallel: bool = True,
         enable_adaptive: bool = True,
@@ -66,15 +68,9 @@ class OptimizedRecursiveEngine:
         max_cache_size: int = 10000,
         convergence_strategy: Optional[ConvergenceStrategy] = None,
     ):
-        if model_router and llm is None:
-            llm = model_router.provider_for_role("assistant")
-            if critic is None:
-                try:
-                    critic = CriticLLM(model_router.provider_for_role("critic"))
-                except Exception:  # pragma: no cover - optional critic
-                    critic = None
 
         self.model_router = model_router
+        self.budget_manager = budget_manager
         self.llm = llm  # type: ignore[assignment]
         self.cache = cache
         self.evaluator = evaluator
@@ -370,7 +366,12 @@ Rules:
         return stats
 
 
-def create_optimized_engine(config: CoRTConfig) -> OptimizedRecursiveEngine:
+def create_optimized_engine(
+    config: CoRTConfig,
+    *,
+    router: Optional[ModelRouter] = None,
+    budget_manager: Optional[BudgetManager] = None,
+) -> OptimizedRecursiveEngine:
     """Build an :class:`OptimizedRecursiveEngine` from configuration."""
 
     selector: Optional[ModelSelector] = None
@@ -378,7 +379,6 @@ def create_optimized_engine(config: CoRTConfig) -> OptimizedRecursiveEngine:
     if config.model_policy:
         metadata = fetch_models()
         selector = ModelSelector(metadata, config.model_policy)
-        default_model = selector.model_for_role("assistant")
 
     router = ModelRouter(
         provider=config.provider,
@@ -396,6 +396,15 @@ def create_optimized_engine(config: CoRTConfig) -> OptimizedRecursiveEngine:
             critic = CriticLLM(router.provider_for_role("critic"))
         except Exception:  # pragma: no cover - optional critic
             critic = None
+    router = router or ModelRouter.from_config(config, selector)
+    llm = router.provider_for_role("assistant")
+
+    critic = None
+    try:
+        critic_provider = router.provider_for_role("critic")
+        critic = CriticLLM(critic_provider)
+    except Exception:
+        critic = None
 
     cache = InMemoryLRUCache(max_size=config.cache_size)
     evaluator = EnhancedQualityEvaluator(thresholds=config.quality_thresholds)
@@ -407,10 +416,11 @@ def create_optimized_engine(config: CoRTConfig) -> OptimizedRecursiveEngine:
     )
 
     return OptimizedRecursiveEngine(
-        llm=None,
+        llm=llm,
         cache=cache,
         evaluator=evaluator,
         model_router=router,
+        budget_manager=budget_manager,
         critic=critic,
         convergence_strategy=convergence,
         enable_parallel=config.enable_parallel_thinking,

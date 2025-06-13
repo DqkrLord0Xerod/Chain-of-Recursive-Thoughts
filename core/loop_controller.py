@@ -8,27 +8,17 @@ import time
 
 from dataclasses import dataclass, asdict
 from typing import AsyncIterator, Dict, List, Optional, TYPE_CHECKING
+
 import aiofiles
-
-
-
 import structlog
 
-from monitoring.telemetry import record_thinking_metrics, generate_request_id
 from core.prompt_evolution import evolve_prompt
-
+from monitoring.telemetry import generate_request_id, record_thinking_metrics
 
 if TYPE_CHECKING:  # pragma: no cover - typing helpers
     from core.chat_v2 import ThinkingResult, ThinkingRound
 
 logger = structlog.get_logger(__name__)
-
-from monitoring.telemetry import record_thinking_metrics
-
-
-
-if TYPE_CHECKING:  # pragma: no cover
-    from core.chat_v2 import ThinkingResult, ThinkingRound
 
 
 SESSION_DIR = "session_logs"
@@ -43,12 +33,6 @@ class LoopState:
     convergence_reason: str
     start_time: float
     end_time: float
-
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:  # pragma: no cover - for type hints
-    from core.chat_v2 import ThinkingResult
-
 
 
 class LoopController:
@@ -295,13 +279,9 @@ class LoopController:
         metadata: Optional[Dict[str, object]] = None,
     ) -> "ThinkingResult":
         """High level loop used by RecursiveThinkingEngine."""
-        from core.chat_v2 import ThinkingRound, ThinkingResult
-
-        from core.chat_v2 import ThinkingRound, ThinkingResult
-
         from core.chat_v2 import (
             ThinkingRound as _ThinkingRound,
-            ThinkingResult as _ThinkingResult,
+            ThinkingResult,
         )
 
         start_time = time.time()
@@ -328,12 +308,15 @@ class LoopController:
 
         messages = memory_messages + history + [{"role": "user", "content": prompt}]
 
+        stage_start = time.time()
         resp = await self.engine.cache_manager.chat(
             messages,
             temperature=temperature,
             role="assistant",
             metadata=metadata,
         )
+
+        initial_duration = time.time() - stage_start
 
         best_response = resp.content
         total_tokens = resp.usage.get("total_tokens", 0)
@@ -348,7 +331,7 @@ class LoopController:
                     selected=True,
                     explanation="initial",
                     quality_score=quality,
-                    duration=0.0,
+                    duration=initial_duration,
                 )
             ]
             self.engine.conversation.add("user", prompt)
@@ -362,7 +345,7 @@ class LoopController:
                 num_rounds=0,
                 convergence_reason=convergence_reason,
             )
-            return _ThinkingResult(
+            return ThinkingResult(
                 response=best_response,
                 thinking_rounds=0,
                 thinking_history=thinking_history,
@@ -498,9 +481,6 @@ class LoopController:
             duration=processing_time,
             convergence_reason=convergence_reason,
         )
-
-
-        return _ThinkingResult(
 
         from core.chat_v2 import ThinkingResult
         return ThinkingResult(

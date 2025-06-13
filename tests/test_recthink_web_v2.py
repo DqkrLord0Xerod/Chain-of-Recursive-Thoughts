@@ -47,7 +47,11 @@ def setup_module(module):
 
 def test_chat_endpoint(monkeypatch):
     client = TestClient(recthink_web_v2.app)
-    monkeypatch.setattr(recthink_web_v2, "create_optimized_engine", lambda config: DummyEngine())
+    monkeypatch.setattr(
+        recthink_web_v2,
+        "create_optimized_engine",
+        lambda config, router=None, budget_manager=None: DummyEngine(),
+    )
 
     resp = client.post("/chat", json={"session_id": "s1", "message": "hi"})
     assert resp.status_code == 200
@@ -59,7 +63,11 @@ def test_chat_endpoint(monkeypatch):
 
 def test_websocket_endpoint(monkeypatch):
     client = TestClient(recthink_web_v2.app)
-    monkeypatch.setattr(recthink_web_v2, "create_optimized_engine", lambda config: DummyEngine())
+    monkeypatch.setattr(
+        recthink_web_v2,
+        "create_optimized_engine",
+        lambda config, router=None, budget_manager=None: DummyEngine(),
+    )
 
     with client.websocket_connect("/ws/s2") as ws:
         ws.send_text(json.dumps({"message": "hello"}))
@@ -70,7 +78,11 @@ def test_websocket_endpoint(monkeypatch):
 
 def test_websocket_stream(monkeypatch):
     client = TestClient(recthink_web_v2.app)
-    monkeypatch.setattr(recthink_web_v2, "create_optimized_engine", lambda config: DummyEngine())
+    monkeypatch.setattr(
+        recthink_web_v2,
+        "create_optimized_engine",
+        lambda config, router=None, budget_manager=None: DummyEngine(),
+    )
 
     with client.websocket_connect("/ws/stream/s3") as ws:
         ws.send_text(json.dumps({"message": "hi"}))
@@ -86,7 +98,7 @@ def test_websocket_stream_order(monkeypatch):
     monkeypatch.setattr(
         recthink_web_v2,
         "create_optimized_engine",
-        lambda config: DummyEngine(),
+        lambda config, router=None, budget_manager=None: DummyEngine(),
     )
 
     with client.websocket_connect("/ws/stream/s4") as ws:
@@ -130,7 +142,7 @@ def test_batch_chat_endpoint(monkeypatch):
     monkeypatch.setattr(
         recthink_web_v2,
         "create_optimized_engine",
-        lambda config: EngineWithParallel(),
+        lambda config, router=None, budget_manager=None: EngineWithParallel(),
     )
 
     class DummyAnalyzer:
