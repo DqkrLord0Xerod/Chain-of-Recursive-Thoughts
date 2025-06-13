@@ -190,9 +190,9 @@ def create_default_engine(
     *,
     router: Optional[ModelRouter] = None,
     budget_manager: Optional[BudgetManager] = None,
+    output_filter: Optional[OutputFilter] = None,
 ) -> RecursiveThinkingEngine:
     """Build a :class:`RecursiveThinkingEngine` from configuration."""
-
 
     if config.provider.lower() == "openai":
         llm = OpenAILLMProvider(
@@ -214,11 +214,6 @@ def create_default_engine(
     ctx_mgr = ContextManager(config.max_context_tokens, tokenizer)
 
     strategy = strategy_from_config(config, llm, evaluator)
-    strategy = StrategyFactory(llm, evaluator).create(config.thinking_strategy)
-
-
-
-    strategy = load_strategy(config.thinking_strategy, llm, evaluator)
     convergence = ConvergenceStrategy(
         evaluator.score,
         evaluator.score,
@@ -234,11 +229,11 @@ def create_default_engine(
         llm=llm,
         cache=cache,
         evaluator=evaluator,
-        context_manager=context_manager,
-        thinking_strategy=strategy,
-        convergence_strategy=convergence,
-        tools=tools,
         context_manager=ctx_mgr,
         thinking_strategy=strategy,
         convergence_strategy=convergence,
+        model_router=router,
+        budget_manager=budget_manager,
+        tools=tools,
+        output_filter=output_filter,
     )
