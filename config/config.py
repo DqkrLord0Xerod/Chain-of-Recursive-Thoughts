@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     embed_url: str = "https://openrouter.ai/api/v1/embeddings"
     frontend_url: str = "http://localhost:3000"
     ws_base_url: str = "ws://localhost:8000"
+    thinking_strategy: str = Field("adaptive", env="THINKING_STRATEGY")
 
     class Config:
         env_file = ".env"

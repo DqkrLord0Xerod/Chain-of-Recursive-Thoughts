@@ -42,7 +42,17 @@ class BudgetManager:
         """Return True if adding ``next_tokens`` would exceed the limit."""
         return self.tokens_used + next_tokens >= self.token_limit
 
-    def record_usage(self, tokens: int) -> None:
+    def enforce_limit(self, next_tokens: int) -> None:
+        """Raise ``TokenLimitError`` if the token budget would be exceeded."""
+        from exceptions import TokenLimitError
+
+        if self.will_exceed_budget(next_tokens):
+            raise TokenLimitError("Token budget exceeded")
+
+    def record_llm_usage(self, tokens: int) -> None:
         """Record ``tokens`` consumed and update cost statistics."""
         self.tokens_used += tokens
         self.dollars_spent += tokens * self._cost_per_token
+
+    # Backwards compatibility
+    record_usage = record_llm_usage

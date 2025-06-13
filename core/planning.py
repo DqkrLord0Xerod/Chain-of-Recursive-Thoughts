@@ -3,10 +3,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from core.interfaces import LLMProvider
+from core.strategies.base import ImprovementPlanner as BaseImprovementPlanner
 
 
 @dataclass
-class ImprovementPlanner:
+class ImprovementPlanner(BaseImprovementPlanner):
     """Generate improvement plans for responses."""
 
     llm: LLMProvider

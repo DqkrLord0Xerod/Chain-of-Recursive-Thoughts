@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Callable
 
-from core.interfaces import QualityEvaluator
+from core.strategies.base import QualityEvaluator
 from core.recursion import QualityAssessor
 
 
@@ -15,3 +15,6 @@ class DefaultQualityEvaluator(QualityEvaluator):
 
     def score(self, response: str, prompt: str) -> float:
         return self.assessor.comprehensive_score(response, prompt)["overall"]
+
+    def detailed_score(self, response: str, prompt: str) -> dict[str, float]:
+        return self.assessor.comprehensive_score(response, prompt)
