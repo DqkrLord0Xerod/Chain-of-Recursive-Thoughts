@@ -20,6 +20,7 @@ class MetricsManager:
         token_usage: int,
         num_rounds: int,
         convergence_reason: str,
+        quality_scores: Optional[list[float]] = None,
     ) -> None:
         if self.recorder:
             self.recorder.record_run(
@@ -27,4 +28,5 @@ class MetricsManager:
                 token_usage=token_usage,
                 num_rounds=num_rounds,
                 convergence_reason=convergence_reason,
+                quality_scores=quality_scores or [],
             )

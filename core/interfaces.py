@@ -133,6 +133,7 @@ class MetricsRecorder(Protocol):
         token_usage: int,
         num_rounds: int,
         convergence_reason: str,
+        quality_scores: list[float] | None = None,
         **kwargs
     ) -> None:
         """Record metrics for a thinking run."""

@@ -3,12 +3,32 @@
 from __future__ import annotations
 
 import json
+import os
 import time
-from typing import AsyncIterator, Dict, List, Optional
+from dataclasses import dataclass, asdict
+from typing import AsyncIterator, Dict, List, Optional, TYPE_CHECKING
+
+import aiofiles
 
 from core.prompt_evolution import evolve_prompt
 from monitoring.telemetry import record_thinking_metrics
-from core.chat_v2 import ThinkingResult, ThinkingRound
+
+if TYPE_CHECKING:  # pragma: no cover
+    from core.chat_v2 import ThinkingResult, ThinkingRound
+
+
+SESSION_DIR = "session_logs"
+
+
+@dataclass
+class LoopState:
+    """Persisted state of a thinking loop."""
+
+    rounds: List[ThinkingRound]
+    scores: List[float]
+    convergence_reason: str
+    start_time: float
+    end_time: float
 
 
 class LoopController:
@@ -16,6 +36,50 @@ class LoopController:
 
     def __init__(self, engine) -> None:
         self.engine = engine
+
+    async def _persist_state(self, session_id: str, state: LoopState) -> None:
+        """Persist loop state to session log."""
+        os.makedirs(SESSION_DIR, exist_ok=True)
+        path = os.path.join(SESSION_DIR, f"{session_id}.json")
+        try:
+            async with aiofiles.open(path, "r") as f:
+                data = json.loads(await f.read())
+        except FileNotFoundError:
+            data = []
+
+        data.append(asdict(state))
+
+        async with aiofiles.open(path, "w") as f:
+            await f.write(json.dumps(data, indent=2))
+
+    async def load_loop_history(self, session_id: str) -> List[LoopState]:
+        """Load persisted loop history for a session."""
+        from core.chat_v2 import ThinkingRound
+
+        path = os.path.join(SESSION_DIR, f"{session_id}.json")
+        try:
+            async with aiofiles.open(path, "r") as f:
+                raw = json.loads(await f.read())
+        except FileNotFoundError:
+            return []
+
+        history = []
+        for item in raw:
+            rounds = [ThinkingRound(**r) for r in item["rounds"]]
+            state = LoopState(
+                rounds=rounds,
+                scores=item.get("scores", []),
+                convergence_reason=item.get("convergence_reason", ""),
+                start_time=item.get("start_time", 0.0),
+                end_time=item.get("end_time", 0.0),
+            )
+            history.append(state)
+        return history
+
+    async def get_convergence_reasons(self, session_id: str) -> List[str]:
+        """Return convergence reasons for a session history."""
+        history = await self.load_loop_history(session_id)
+        return [h.convergence_reason for h in history]
 
     async def evaluate_step(self, prompt: str, response: str) -> float:
         """Score a response using the engine's evaluator and critic."""
@@ -156,9 +220,12 @@ class LoopController:
         thinking_rounds: Optional[int] = None,
         alternatives_per_round: int = 3,
         temperature: float = 0.7,
+        session_id: Optional[str] = None,
         metadata: Optional[Dict[str, object]] = None,
     ) -> ThinkingResult:
         """High level loop used by RecursiveThinkingEngine."""
+
+        from core.chat_v2 import ThinkingRound, ThinkingResult
 
         start_time = time.time()
         metadata = metadata or {}
@@ -263,7 +330,18 @@ class LoopController:
             token_usage=total_tokens,
             num_rounds=len(thinking_history) - 1,
             convergence_reason=convergence_reason,
+            quality_scores=quality_scores,
         )
+
+        loop_state = LoopState(
+            rounds=thinking_history,
+            scores=quality_scores,
+            convergence_reason=convergence_reason,
+            start_time=start_time,
+            end_time=time.time(),
+        )
+        if session_id:
+            await self._persist_state(session_id, loop_state)
 
         return ThinkingResult(
             response=best_response,

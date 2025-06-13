@@ -9,7 +9,13 @@ from core.chat_v2 import ThinkingResult, ThinkingRound  # noqa: E402
 
 
 class DummyEngine:
-    async def think_and_respond(self, message, thinking_rounds=None, alternatives_per_round=3):
+    async def think_and_respond(
+        self,
+        message,
+        thinking_rounds=None,
+        alternatives_per_round=3,
+        session_id=None,
+    ):
         return ThinkingResult(
             response="ok",
             thinking_rounds=1,

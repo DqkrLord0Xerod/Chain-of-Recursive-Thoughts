@@ -75,6 +75,7 @@ async def chat_endpoint(request: ChatRequest):
             request.message,
             thinking_rounds=request.thinking_rounds,
             alternatives_per_round=request.alternatives_per_round,
+            session_id=request.session_id,
         )
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
@@ -128,6 +129,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                     message,
                     thinking_rounds=rounds,
                     alternatives_per_round=alts,
+                    session_id=session_id,
                 )
             except Exception as exc:
                 await websocket.send_json({"error": str(exc)})
