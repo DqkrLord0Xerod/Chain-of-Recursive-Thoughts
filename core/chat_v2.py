@@ -172,6 +172,8 @@ class RecursiveThinkingEngine:
         metadata: Optional[Dict[str, object]] = None,
     ) -> ThinkingResult:
         """Execute the recursive loop via :class:`LoopController`."""
+        metadata = metadata or {}
+        metadata.setdefault("request_id", generate_request_id())
         result = await self.loop_controller.respond(
             prompt,
             thinking_rounds=thinking_rounds,

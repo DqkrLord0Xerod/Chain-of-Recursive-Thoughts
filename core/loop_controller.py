@@ -227,10 +227,18 @@ class LoopController:
         }
 
     async def run_stream(
-        self, prompt: str, *, context: Optional[List[Dict[str, str]]] = None
+        self,
+        prompt: str,
+        *,
+        context: Optional[List[Dict[str, str]]] = None,
+        metadata: Optional[Dict[str, object]] = None,
     ) -> AsyncIterator[Dict]:
         """Yield progress updates for the thinking loop."""
         start_time = time.time()
+        metadata = metadata or {}
+        request_id = metadata.get("request_id") or generate_request_id()
+        metadata["request_id"] = request_id
+        logger.info("loop_start", request_id=request_id, prompt=prompt)
         initial = await self.engine._generate_initial(prompt, context)
         quality = await self.evaluate_step(prompt, initial.content)
         yield {
