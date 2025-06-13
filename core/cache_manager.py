@@ -61,13 +61,18 @@ class CacheManager:
         *,
         temperature: float,
         role: str,
+        metadata: Optional[Dict[str, object]] = None,
     ) -> LLMResponse:
         """Return cached response or call the LLM."""
 
         key = self._generate_key(messages, temperature)
         cached = await self.cache.get(key)
         if cached:
-            logger.info("cache_hit", key=key[:8])
+            logger.info(
+                "cache_hit",
+                key=key[:8],
+                request_id=(metadata or {}).get("request_id"),
+            )
             if hasattr(cached, "cached"):
                 cached.cached = True
             return cached
@@ -91,7 +96,11 @@ class CacheManager:
         if self.model_selector:
             self.llm.model = self.model_selector.model_for_role(role)
 
-        response = await self.llm.chat(messages, temperature=temperature)
+        response = await self.llm.chat(
+            messages,
+            temperature=temperature,
+            metadata=metadata,
+        )
 
         if self.budget_manager:
             tokens = response.usage.get("total_tokens", 0)

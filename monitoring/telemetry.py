@@ -6,6 +6,8 @@ import asyncio
 import functools
 from contextlib import asynccontextmanager, contextmanager
 from typing import Any, Callable, Dict, Optional, TypeVar
+import uuid
+import logging
 
 from opentelemetry import trace, metrics
 from opentelemetry.exporter.prometheus import PrometheusMetricReader
@@ -34,6 +36,26 @@ T = TypeVar('T')
 _tracer: Optional[trace.Tracer] = None
 _meter: Optional[metrics.Meter] = None
 _metrics: Optional['CoRTMetrics'] = None
+
+
+def generate_request_id() -> str:
+    """Generate a short request/session identifier."""
+    return uuid.uuid4().hex[:8]
+
+
+def configure_logging(level: str = "INFO", fmt: str = "json") -> None:
+    """Configure structlog for JSON or console output."""
+    processors = [
+        structlog.processors.add_log_level,
+        structlog.processors.TimeStamper(fmt="iso"),
+    ]
+    if fmt == "json":
+        processors.append(structlog.processors.JSONRenderer())
+    else:
+        processors.append(structlog.dev.ConsoleRenderer())
+
+    logging.basicConfig(level=getattr(logging, level.upper(), logging.INFO))
+    structlog.configure(processors=processors)
 
 
 class CoRTMetrics:
@@ -160,6 +182,8 @@ def initialize_telemetry(
     enable_prometheus: bool = True,
     prometheus_port: int = 8080,
     jaeger_endpoint: Optional[str] = None,
+    log_level: str = "INFO",
+    log_format: str = "json",
 ) -> None:
     """
     Initialize OpenTelemetry with configured exporters.
@@ -173,6 +197,8 @@ def initialize_telemetry(
         jaeger_endpoint: Jaeger collector endpoint
     """
     global _tracer, _meter, _metrics
+
+    configure_logging(log_level, log_format)
     
     # Create resource
     resource = Resource.create({

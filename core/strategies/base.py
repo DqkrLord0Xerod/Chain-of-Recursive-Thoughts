@@ -7,9 +7,14 @@ from typing import Dict, List, Tuple
 class ThinkingStrategy(ABC):
     """Abstract base class for thinking strategies."""
 
+
+    async def determine_rounds(self, prompt: str, *, request_id: str) -> int:
+        """Determine number of thinking rounds needed."""
+
     @abstractmethod
     async def determine_rounds(self, prompt: str) -> int:
         """Return the number of rounds to run for the given prompt."""
+
 
     @abstractmethod
     async def should_continue(
@@ -17,7 +22,11 @@ class ThinkingStrategy(ABC):
         rounds_completed: int,
         quality_scores: List[float],
         responses: List[str],
+
+        *,
+        request_id: str,
     ) -> Tuple[bool, str]:
+
         """Return whether to continue and the reason."""
 
 

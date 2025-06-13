@@ -7,10 +7,20 @@ import os
 import time
 from dataclasses import dataclass, asdict
 from typing import AsyncIterator, Dict, List, Optional, TYPE_CHECKING
-
 import aiofiles
 
+
+import structlog
+
+from monitoring.telemetry import record_thinking_metrics, generate_request_id
 from core.prompt_evolution import evolve_prompt
+
+
+if TYPE_CHECKING:  # pragma: no cover - typing helpers
+    from core.chat_v2 import ThinkingResult, ThinkingRound
+
+logger = structlog.get_logger(__name__)
+
 from monitoring.telemetry import record_thinking_metrics
 
 
@@ -35,6 +45,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:  # pragma: no cover - for type hints
     from core.chat_v2 import ThinkingResult
+
 
 
 
@@ -99,9 +110,14 @@ class LoopController:
         context: Optional[List[Dict[str, str]]] = None,
         max_thinking_time: float = 30.0,
         target_quality: float = 0.9,
+        metadata: Optional[Dict[str, object]] = None,
     ) -> Dict:
         """Run the optimized thinking loop."""
         start_time = time.time()
+        metadata = metadata or {}
+        request_id = metadata.get("request_id") or generate_request_id()
+        metadata["request_id"] = request_id
+        logger.info("loop_start", request_id=request_id, prompt=prompt)
 
         cached_response = await self.engine._check_semantic_cache(prompt)
         if cached_response:
@@ -166,6 +182,14 @@ class LoopController:
         )
 
         self.engine.prompt_history.append(prompt)
+        logger.info(
+            "loop_complete",
+            request_id=request_id,
+            rounds=metrics.get("rounds", 0),
+            duration=thinking_time,
+            final_quality=final_quality,
+        )
+        metrics["request_id"] = request_id
         return {
             "response": best_response,
             "cached": False,
@@ -229,7 +253,7 @@ class LoopController:
         temperature: float = 0.7,
         session_id: Optional[str] = None,
         metadata: Optional[Dict[str, object]] = None,
-    ) -> ThinkingResult:
+    ) -> "ThinkingResult":
         """High level loop used by RecursiveThinkingEngine."""
         from core.chat_v2 import ThinkingRound, ThinkingResult
 
@@ -237,6 +261,9 @@ class LoopController:
 
         start_time = time.time()
         metadata = metadata or {}
+        request_id = metadata.get("request_id") or generate_request_id()
+        metadata["request_id"] = request_id
+        logger.info("loop_start", request_id=request_id, prompt=prompt)
 
         if hasattr(self.engine.thinking_strategy, "preprocess_prompt"):
             prompt = await self.engine.thinking_strategy.preprocess_prompt(prompt, self.engine)
@@ -249,14 +276,20 @@ class LoopController:
 
         rounds = thinking_rounds
         if rounds is None:
-            rounds = await self.engine.thinking_strategy.determine_rounds(prompt)
+            rounds = await self.engine.thinking_strategy.determine_rounds(
+                prompt,
+                request_id=request_id,
+            )
 
         messages = memory_messages + history + [{"role": "user", "content": prompt}]
-        stage_start = time.time()
+
         resp = await self.engine.cache_manager.chat(
-            messages, temperature=temperature, role="assistant"
+            messages,
+            temperature=temperature,
+            role="assistant",
+            metadata=metadata,
         )
-        initial_duration = time.time() - stage_start
+
         best_response = resp.content
         total_tokens = resp.usage.get("total_tokens", 0)
         quality = await self.evaluate_step(prompt, best_response)
@@ -281,6 +314,15 @@ class LoopController:
                 f"Given the prompt:\n{prompt}\nCurrent answer:\n{best_response}\n"
                 f"Provide up to {alternatives_per_round} alternatives as JSON with keys 'alternatives', 'selection', 'thinking'."
             )
+
+            messages = memory_messages + history + [{"role": "user", "content": improve_prompt}]
+            alt_resp = await self.engine.cache_manager.chat(
+                messages,
+                temperature=temperature,
+                role="assistant",
+                metadata=metadata,
+            )
+
             messages = memory_messages + history + [
                 {"role": "user", "content": improve_prompt}
             ]
@@ -289,6 +331,7 @@ class LoopController:
                 messages, temperature=temperature, role="assistant"
             )
             round_duration = time.time() - stage_start
+
             total_tokens += alt_resp.usage.get("total_tokens", 0)
             try:
                 data = json.loads(alt_resp.content)
@@ -328,6 +371,7 @@ class LoopController:
                 round_num,
                 quality_scores,
                 responses,
+                request_id=request_id,
             )
             convergence_reason = reason
             if not cont:
@@ -361,6 +405,15 @@ class LoopController:
         if session_id:
             await self._persist_state(session_id, loop_state)
 
+        logger.info(
+            "loop_complete",
+            request_id=request_id,
+            rounds=len(thinking_history) - 1,
+            duration=processing_time,
+            convergence_reason=convergence_reason,
+        )
+
+        from core.chat_v2 import ThinkingResult
         return ThinkingResult(
             response=best_response,
             thinking_rounds=len(thinking_history) - 1,

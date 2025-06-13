@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import List
-
 import structlog
 
 from core.interfaces import LLMProvider, QualityEvaluator
@@ -40,4 +38,3 @@ class HybridToolStrategy(AdaptiveThinkingStrategy):
             result = await engine.run_tool("python", code)
             prompt += f"\nPython output:\n{result}"
         return prompt
-
