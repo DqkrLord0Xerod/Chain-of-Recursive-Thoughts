@@ -204,6 +204,19 @@ config = CoRTConfig(
 engine = create_optimized_engine(config)
 ```
 
+### Thinking strategies
+
+Select how the engine decides when to stop thinking by setting
+`CoRTConfig.thinking_strategy`. The name is resolved by
+`core.strategies.load_strategy` at engine creation time.
+
+```python
+from core import CoRTConfig, create_default_engine
+
+config = CoRTConfig(thinking_strategy="hybrid")
+engine = create_default_engine(config)
+```
+
 * `docs/EXTENDING.md#custom-providers`
 * `docs/EXTENDING.md#custom-strategies`
 * `docs/STRATEGIES.md` for runtime strategy selection

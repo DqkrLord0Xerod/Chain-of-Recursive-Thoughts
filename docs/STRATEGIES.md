@@ -23,14 +23,38 @@ creating an engine using `create_default_engine`, the strategy is obtained from
 ```python
 from core import CoRTConfig, create_default_engine
 
-config = CoRTConfig(thinking_strategy="fixed")
+config = CoRTConfig(
+    thinking_strategy="fixed",
+    quality_thresholds={"overall": 0.8},
+)
 engine = create_default_engine(config)
 ```
 
 Unknown strategy names fall back to the adaptive implementation.
+
+codex/document-components-and-update-readme
+## Advanced configuration
+
+`load_strategy` can be used directly when you need to pass custom parameters or
+register your own implementation.
+
+```python
+from core.strategies import load_strategy
+from core.chat_v2 import RecursiveThinkingEngine
+
+strategy = load_strategy("fixed", llm, evaluator, rounds=2)
+engine = RecursiveThinkingEngine(
+    llm=llm,
+    cache=cache,
+    evaluator=evaluator,
+    context_manager=context,
+    thinking_strategy=strategy,
+)
+```
 
 ## Runtime configuration
 
 The active strategy can also be set via the `THINKING_STRATEGY` environment
 variable or the equivalent setting in a configuration file. The factory will use
 this value when no explicit strategy name is provided.
+
