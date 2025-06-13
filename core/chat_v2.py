@@ -29,6 +29,7 @@ from core.providers import (  # noqa: F401
 )
 from core.planning import ImprovementPlanner
 from core.model_policy import ModelSelector
+from core.model_router import ModelRouter
 from core.budget import BudgetManager
 from core.cache_manager import CacheManager
 from core.metrics_manager import MetricsManager
@@ -107,6 +108,7 @@ class RecursiveThinkingEngine:
         thinking_strategy: ThinkingStrategy,
         convergence_strategy: Optional[ConvergenceStrategy] = None,
         model_selector: Optional[ModelSelector] = None,
+        model_router: Optional[ModelRouter] = None,
         *,
         cache_manager: Optional[CacheManager] = None,
         metrics_manager: Optional[MetricsManager] = None,
@@ -130,6 +132,7 @@ class RecursiveThinkingEngine:
             advanced=False,  # Will be passed explicitly in create_default_engine
         )
         self.model_selector = model_selector
+        self.model_router = model_router
         self.budget_manager = budget_manager
         self.cache_manager = cache_manager or CacheManager(
             llm,
@@ -183,30 +186,26 @@ class RecursiveThinkingEngine:
         return result
 
 
-def create_default_engine(config: CoRTConfig) -> RecursiveThinkingEngine:
+def create_default_engine(
+    config: CoRTConfig,
+    *,
+    router: Optional[ModelRouter] = None,
+    budget_manager: Optional[BudgetManager] = None,
+) -> RecursiveThinkingEngine:
     """Build a :class:`RecursiveThinkingEngine` from configuration."""
 
-    if config.provider.lower() == "openai":
-        llm = OpenAILLMProvider(
-            api_key=config.api_key or os.getenv("OPENAI_API_KEY"),
-            model=config.model,
-            max_retries=config.max_retries,
-        )
-    else:
-        llm = OpenRouterLLMProvider(
-            api_key=config.api_key or os.getenv("OPENROUTER_API_KEY"),
-            model=config.model,
-            max_retries=config.max_retries,
-        )
-
-    cache = InMemoryLRUCache(max_size=config.cache_size)
-    evaluator = EnhancedQualityEvaluator(thresholds=config.quality_thresholds)
+    selector: Optional[ModelSelector] = None
+    if config.model_policy:
+        metadata = fetch_models()
+        selector = ModelSelector(metadata, config.model_policy)
 
     tokenizer = tiktoken.get_encoding("cl100k_base")
     ctx_mgr = ContextManager(config.max_context_tokens, tokenizer)
 
     strategy = StrategyFactory(llm, evaluator).create(config.thinking_strategy)
 
+
+    strategy = load_strategy(config.thinking_strategy, llm, evaluator)
     convergence = ConvergenceStrategy(
         evaluator.score,
         evaluator.score,
@@ -225,5 +224,4 @@ def create_default_engine(config: CoRTConfig) -> RecursiveThinkingEngine:
         context_manager=ctx_mgr,
         thinking_strategy=strategy,
         convergence_strategy=convergence,
-        tools=tools,
     )
