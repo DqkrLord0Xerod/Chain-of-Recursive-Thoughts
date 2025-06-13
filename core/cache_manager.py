@@ -8,7 +8,6 @@ from typing import Dict, List, Optional
 
 import structlog
 
-from exceptions import TokenLimitError
 from core.interfaces import CacheProvider, LLMProvider, LLMResponse
 from core.model_policy import ModelSelector
 from core.budget import BudgetManager
@@ -56,9 +55,8 @@ class CacheManager:
 
         if self.budget_manager:
             tokens = response.usage.get("total_tokens", 0)
-            if self.budget_manager.will_exceed_budget(tokens):
-                raise TokenLimitError("Token budget exceeded")
-            self.budget_manager.record_usage(tokens)
+            self.budget_manager.enforce_limit(tokens)
+            self.budget_manager.record_llm_usage(tokens)
 
         await self.cache.set(key, response, ttl=3600, tags=["llm_response"])
         return response
