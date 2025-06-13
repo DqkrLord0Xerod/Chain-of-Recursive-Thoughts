@@ -30,9 +30,13 @@ from core.optimization.parallel_thinking import (
 from core.recursion import ConvergenceStrategy
 from core.loop_controller import LoopController
 from monitoring.telemetry import trace_method
+from core.security import CredentialManager
 
 
 logger = structlog.get_logger(__name__)
+
+
+credential_manager = CredentialManager()
 
 
 class OptimizedRecursiveEngine:
@@ -372,11 +376,40 @@ def create_optimized_engine(config: CoRTConfig) -> OptimizedRecursiveEngine:
     if config.model_policy:
         metadata = fetch_models()
         selector = ModelSelector(metadata, config.model_policy)
+        default_model = selector.model_for_role("assistant")
 
-    router = ModelRouter.from_config(config, selector)
+    if config.provider.lower() == "openai":
+        llm = OpenAILLMProvider(
+            api_key=config.api_key or credential_manager.get("OPENAI_API_KEY"),
+            model=default_model,
+            max_retries=config.max_retries,
+        )
+    else:
+        llm = OpenRouterLLMProvider(
+            api_key=config.api_key or credential_manager.get("OPENROUTER_API_KEY"),
+            model=default_model,
+            max_retries=config.max_retries,
+        )
+
+    critic = None
+    if selector:
+        critic_model = selector.model_for_role("critic")
+        if config.provider.lower() == "openai":
+            critic_provider = OpenAILLMProvider(
+                api_key=config.api_key or credential_manager.get("OPENAI_API_KEY"),
+                model=critic_model,
+                max_retries=config.max_retries,
+            )
+        else:
+            critic_provider = OpenRouterLLMProvider(
+                api_key=config.api_key or credential_manager.get("OPENROUTER_API_KEY"),
+                model=critic_model,
+                max_retries=config.max_retries,
+            )
+        critic = CriticLLM(critic_provider)
+
 
     cache = InMemoryLRUCache(max_size=config.cache_size)
-
     evaluator = EnhancedQualityEvaluator(thresholds=config.quality_thresholds)
     convergence = ConvergenceStrategy(
         evaluator.score,
