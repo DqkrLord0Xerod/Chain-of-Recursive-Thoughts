@@ -287,14 +287,14 @@ class BatchThinkingOptimizer:
         self._batch_lock = asyncio.Lock()
         self._batch_task: Optional[asyncio.Task] = None
         
-    async def think(self, prompt: str, initial_response: str) -> Tuple[str, Dict]:
+    async def think(self, prompt: str) -> Tuple[str, Dict]:
         """
         Add thinking request to batch.
         
         Returns:
             Best response and metrics
         """
-        future = asyncio.Future()
+        future = asyncio.get_event_loop().create_future()
         
         async with self._batch_lock:
             self._pending_requests.append((prompt, future))
@@ -306,6 +306,11 @@ class BatchThinkingOptimizer:
         # Wait for result
         result = await future
         return result
+
+    async def think_batch(self, prompts: List[str]) -> List[Tuple[str, Dict]]:
+        """Process multiple prompts concurrently."""
+        tasks = [asyncio.create_task(self.think(p)) for p in prompts]
+        return await asyncio.gather(*tasks)
         
     async def _process_batch(self):
         """Process a batch of thinking requests."""

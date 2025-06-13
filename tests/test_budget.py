@@ -46,7 +46,7 @@ def test_budget_manager_records_usage():
     catalog = [{"id": "dummy", "pricing": {"prompt": 0.002, "completion": 0.003}}]
     manager = BudgetManager("dummy", token_limit=100, catalog=catalog)
 
-    manager.record_usage(50)
+    manager.record_llm_usage(50)
     expected_cost = 50 * (0.002 + 0.003) / 1000
 
     assert manager.tokens_used == 50
