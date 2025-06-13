@@ -409,3 +409,35 @@ def test_metrics_summary_endpoint(monkeypatch):
     data = resp.json()
     assert data["summary"]["total_sessions"] == 2
     assert data["anomalies"][0]["type"] == "test"
+
+
+def test_prometheus_metrics_endpoint():
+    """Metrics server exposes recorded values."""
+    import requests
+    from prometheus_client.parser import text_string_to_metric_families
+
+    port = 9131
+    initialize_telemetry(enable_prometheus=True, prometheus_port=port)
+
+    record_thinking_metrics(
+        rounds=2,
+        duration=1.0,
+        convergence_reason="test",
+        initial_quality=0.1,
+        final_quality=0.2,
+        total_tokens=50,
+    )
+    record_cache_metrics(True, cache_type="memory")
+
+    time.sleep(0.2)
+    resp = requests.get(f"http://localhost:{port}/metrics")
+    assert resp.status_code == 200
+
+    metrics = {
+        s.name: s.value
+        for mf in text_string_to_metric_families(resp.text)
+        for s in mf.samples
+    }
+
+    assert metrics.get("cort_thinking_rounds_sum", 0) >= 2
+    assert metrics.get("cort_cache_hits_total", 0) >= 1

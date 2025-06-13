@@ -8,6 +8,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Dict, List, Optional, Deque, Any
 
+from monitoring.telemetry import record_cache_metrics, record_thinking_metrics
+
 import numpy as np
 import structlog
 
@@ -136,6 +138,23 @@ class MetricsAnalyzer:
             Dictionary with insights and any detected anomalies
         """
         self.sessions.append(metrics)
+
+        # Record metrics via Prometheus
+        record_thinking_metrics(
+            metrics.rounds_completed,
+            metrics.duration,
+            metrics.convergence_reason or "unknown",
+            metrics.quality_scores[0] if metrics.quality_scores else 0.0,
+            metrics.quality_scores[-1] if metrics.quality_scores else 0.0,
+            metrics.total_tokens,
+            prompt_tokens=metrics.prompt_tokens,
+            completion_tokens=metrics.completion_tokens,
+        )
+
+        if metrics.cache_hits:
+            record_cache_metrics(True, count=metrics.cache_hits)
+        if metrics.cache_misses:
+            record_cache_metrics(False, count=metrics.cache_misses)
 
         # Update sliding windows
         self.response_times.append(metrics.duration)
