@@ -172,7 +172,40 @@ class RecursiveThinkingEngine:
 
 
 def create_default_engine(config: CoRTConfig) -> RecursiveThinkingEngine:
-    """Compatibility wrapper for existing tests."""
-    from .recursive_engine_v2 import create_optimized_engine
+    """Build a :class:`RecursiveThinkingEngine` from configuration."""
 
-    return create_optimized_engine(config)
+    if config.provider.lower() == "openai":
+        llm = OpenAILLMProvider(
+            api_key=config.api_key or os.getenv("OPENAI_API_KEY"),
+            model=config.model,
+            max_retries=config.max_retries,
+        )
+    else:
+        llm = OpenRouterLLMProvider(
+            api_key=config.api_key or os.getenv("OPENROUTER_API_KEY"),
+            model=config.model,
+            max_retries=config.max_retries,
+        )
+
+    cache = InMemoryLRUCache(max_size=config.cache_size)
+    evaluator = EnhancedQualityEvaluator(thresholds=config.quality_thresholds)
+
+    convergence = ConvergenceStrategy(
+        evaluator.score,
+        evaluator.score,
+        advanced=config.advanced_convergence,
+    )
+
+    tokenizer = tiktoken.get_encoding("cl100k_base")
+    ctx_mgr = ContextManager(config.max_context_tokens, tokenizer)
+
+    strategy = load_strategy(config.thinking_strategy, llm, evaluator)
+
+    return RecursiveThinkingEngine(
+        llm=llm,
+        cache=cache,
+        evaluator=evaluator,
+        context_manager=ctx_mgr,
+        thinking_strategy=strategy,
+        convergence_strategy=convergence,
+    )
