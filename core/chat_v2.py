@@ -37,6 +37,7 @@ from core.tools import ToolRegistry, SearchTool, PythonExecutionTool  # noqa: F4
 from core.memory import FaissMemoryStore
 from api import fetch_models  # noqa: F401
 from config import settings
+from core.security import OutputFilter
 import tiktoken  # noqa: F401
 
 
@@ -115,6 +116,7 @@ class RecursiveThinkingEngine:
         tools: Optional[ToolRegistry] = None,
         planner: Optional["ImprovementPlanner"] = None,
         memory_store: Optional["FaissMemoryStore"] = None,
+        output_filter: Optional["OutputFilter"] = None,
     ) -> None:
         self.llm = llm
         self.cache = cache
@@ -147,6 +149,7 @@ class RecursiveThinkingEngine:
         from core.loop_controller import LoopController
 
         self.loop_controller = LoopController(self)
+        self.output_filter = output_filter
 
         if hasattr(self.thinking_strategy, "set_tools"):
             self.thinking_strategy.set_tools(self.tools)
@@ -172,6 +175,8 @@ class RecursiveThinkingEngine:
             temperature=temperature,
             metadata=metadata,
         )
+        if self.output_filter:
+            result.response = self.output_filter.filter(result.response)
         return result
 
 

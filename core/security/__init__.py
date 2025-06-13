@@ -11,6 +11,7 @@ from .api_security import (
     ValidationError,
     RateLimitError,
 )
+from .output_filter import OutputFilter
 
 __all__ = [
     "APIKeyManager",
@@ -22,4 +23,5 @@ __all__ = [
     "SecurityError",
     "ValidationError",
     "RateLimitError",
+    "OutputFilter",
 ]
