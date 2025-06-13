@@ -6,6 +6,7 @@ import json  # noqa: E402
 from starlette.testclient import TestClient  # noqa: E402
 import recthink_web_v2  # noqa: E402
 from core.chat_v2 import ThinkingResult, ThinkingRound  # noqa: E402
+from core.loop_controller import LoopState  # noqa: E402
 
 
 class DummyEngine:
@@ -160,3 +161,34 @@ def test_batch_chat_endpoint(monkeypatch):
     data = resp.json()
     assert data["responses"] == ["x-ok", "y-ok"]
     assert analyzer.last[0] == 2
+
+
+def test_history_endpoints(monkeypatch):
+    client = TestClient(recthink_web_v2.app)
+
+    class DummyController:
+        async def load_loop_history(self, session_id):
+            return [
+                LoopState(
+                    rounds=[],
+                    scores=[0.5],
+                    convergence_reason="done",
+                    start_time=0.0,
+                    end_time=1.0,
+                )
+            ]
+
+        async def get_convergence_reasons(self, session_id):
+            return ["done"]
+
+    monkeypatch.setattr(recthink_web_v2, "LoopController", lambda *_: DummyController())
+
+    resp = client.get("/sessions/s1/history")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["session_id"] == "s1"
+    assert len(data["history"]) == 1
+
+    resp = client.get("/sessions/s1/convergence")
+    assert resp.status_code == 200
+    assert resp.json()["reasons"] == ["done"]
