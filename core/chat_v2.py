@@ -165,6 +165,7 @@ class RecursiveThinkingEngine:
         thinking_rounds: Optional[int] = None,
         alternatives_per_round: int = 3,
         temperature: float = 0.7,
+        session_id: Optional[str] = None,
         metadata: Optional[Dict[str, object]] = None,
     ) -> ThinkingResult:
         """Execute the recursive loop via :class:`LoopController`."""
@@ -173,6 +174,7 @@ class RecursiveThinkingEngine:
             thinking_rounds=thinking_rounds,
             alternatives_per_round=alternatives_per_round,
             temperature=temperature,
+            session_id=session_id,
             metadata=metadata,
         )
         if self.output_filter:
