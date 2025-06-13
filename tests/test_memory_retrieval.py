@@ -75,7 +75,7 @@ class MockQualityEvaluator:
 
 
 class MockThinkingStrategy:
-    async def determine_rounds(self, prompt: str) -> int:
+    async def determine_rounds(self, prompt: str, *, request_id: str) -> int:
         return 1
 
     async def should_continue(

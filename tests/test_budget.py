@@ -33,11 +33,16 @@ class DummyEvaluator(QualityEvaluator):
 
 
 class TwoRoundStrategy(ThinkingStrategy):
-    async def determine_rounds(self, prompt: str) -> int:
+    async def determine_rounds(self, prompt: str, *, request_id: str) -> int:
         return 2
 
     async def should_continue(
-        self, rounds_completed: int, quality_scores: List[float], responses: List[str]
+        self,
+        rounds_completed: int,
+        quality_scores: List[float],
+        responses: List[str],
+        *,
+        request_id: str,
     ):
         return rounds_completed < 2, "continue"
 

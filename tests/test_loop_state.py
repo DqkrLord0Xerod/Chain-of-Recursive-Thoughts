@@ -51,10 +51,17 @@ class DummyEvaluator:
 
 
 class SimpleStrategy:
-    async def determine_rounds(self, prompt: str) -> int:
+    async def determine_rounds(self, prompt: str, *, request_id: str) -> int:
         return 1
 
-    async def should_continue(self, rounds_completed, quality_scores, responses):
+    async def should_continue(
+        self,
+        rounds_completed,
+        quality_scores,
+        responses,
+        *,
+        request_id: str,
+    ):
         return False, "complete"
 
 
