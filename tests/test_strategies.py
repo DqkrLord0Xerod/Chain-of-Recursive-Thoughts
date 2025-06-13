@@ -4,6 +4,8 @@ from core.strategies import (
     AdaptiveThinkingStrategy,
     FixedThinkingStrategy,
 )
+from core.strategies.base import ThinkingStrategy
+from mypy import api
 from core.chat_v2 import CoRTConfig, create_default_engine
 
 
@@ -49,3 +51,27 @@ def test_threshold_propagation_default_engine():
     engine = create_default_engine(cfg)
     assert engine.evaluator.thresholds["overall"] == 0.8
     assert engine.thinking_strategy.quality_threshold == 0.8
+
+
+def test_strategy_isinstance():
+    assert issubclass(AdaptiveThinkingStrategy, ThinkingStrategy)
+    assert issubclass(FixedThinkingStrategy, ThinkingStrategy)
+
+
+def test_mypy_check(tmp_path):
+    code = """
+from core.strategies.base import ThinkingStrategy
+from typing import List
+
+
+class Dummy(ThinkingStrategy):
+    async def determine_rounds(self, prompt: str) -> int:
+        return 1
+
+    async def should_continue(self, rounds_completed: int, quality_scores: List[float], responses: List[str]) -> tuple[bool, str]:
+        return False, 'done'
+"""
+    path = tmp_path / "snippet.py"
+    path.write_text(code)
+    result = api.run([str(path)])
+    assert result[2] == 0, result[0]
