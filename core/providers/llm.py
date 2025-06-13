@@ -80,8 +80,8 @@ class OpenRouterLLMProvider:
     
     def __init__(
         self,
-        api_key: Optional[str] = None,
         model: str,
+        api_key: Optional[str] = None,
         *,
         max_retries: int = 3,
         timeout: float = 30.0,
@@ -215,8 +215,8 @@ class OpenAILLMProvider:
 
     def __init__(
         self,
-        api_key: Optional[str] = None,
         model: str,
+        api_key: Optional[str] = None,
         *,
         max_retries: int = 3,
         timeout: float = 30.0,

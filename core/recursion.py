@@ -9,7 +9,6 @@ import time
 from core.strategies.base import ConvergenceStrategy as BaseConvergenceStrategy
 
 
-
 class TrendConvergenceStrategy:
     """Strategy for detecting convergence using rolling trends."""
 
@@ -214,6 +213,7 @@ class ConvergenceStrategy(BaseConvergenceStrategy):
         self.time_limit = time_limit
         self.iterations = 0
         self.start_time: float | None = None
+        self.advanced = advanced
 
     def add(self, response: str, prompt: str) -> None:
         """Add response to the history."""
@@ -229,9 +229,6 @@ class ConvergenceStrategy(BaseConvergenceStrategy):
 
     def should_continue(self, prompt: str) -> Tuple[bool, str]:
         """Evaluate whether processing should continue."""
-        cont, reason = self._tracker.should_continue(prompt)
-        if not cont:
-            return cont, reason
         if self.iterations >= self.max_iterations:
             if self._tracker.reason_history:
                 self._tracker.reason_history[-1] = "max iterations"
@@ -245,6 +242,9 @@ class ConvergenceStrategy(BaseConvergenceStrategy):
                 else:
                     self._tracker.reason_history.append("time limit")
                 return False, "time limit"
+        cont, reason = self._tracker.should_continue(prompt)
+        if not cont:
+            return cont, reason
         return True, reason
 
     @property

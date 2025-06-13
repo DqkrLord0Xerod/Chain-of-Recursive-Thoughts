@@ -10,7 +10,7 @@ import os  # noqa: F401
 
 import structlog
 
-from core.strategies import ThinkingStrategy, strategy_from_config
+from core.strategies import ThinkingStrategy, strategy_from_config, load_strategy
 from core.interfaces import (
     CacheProvider,
     LLMProvider,
@@ -214,6 +214,7 @@ def create_default_engine(
     ctx_mgr = ContextManager(config.max_context_tokens, tokenizer)
 
     strategy = strategy_from_config(config, llm, evaluator)
+    strategy = load_strategy(config.thinking_strategy, llm, evaluator)
     convergence = ConvergenceStrategy(
         evaluator.score,
         evaluator.score,
@@ -232,6 +233,7 @@ def create_default_engine(
         context_manager=ctx_mgr,
         thinking_strategy=strategy,
         convergence_strategy=convergence,
+        tools=tools,
         model_router=router,
         budget_manager=budget_manager,
         tools=tools,
