@@ -7,6 +7,8 @@ from typing import Optional, Dict, Protocol
 
 from cryptography.fernet import Fernet
 
+from monitoring.telemetry import audit_log
+
 
 class SecretsBackend(Protocol):
     """Simple protocol for external secret backends."""
@@ -26,6 +28,9 @@ class CredentialManager:
         encryption_key: Optional[str] = None,
         backend: Optional[SecretsBackend] = None,
     ) -> None:
+        secrets_file = secrets_file or os.getenv("SECRETS_FILE")
+        encryption_key = encryption_key or os.getenv("SECRETS_KEY")
+
         self.backend = backend
         self.secrets_file = Path(secrets_file) if secrets_file else None
         self.encryption_key = encryption_key
@@ -41,18 +46,26 @@ class CredentialManager:
             data = cipher.decrypt(data)
         secrets = json.loads(data.decode())
         self._cache.update(secrets)
+        audit_log(
+            "secrets_file_loaded",
+            path=str(self.secrets_file),
+            encrypted=bool(self.encryption_key),
+        )
 
     def get(self, name: str) -> Optional[str]:
         """Retrieve a credential by name."""
         if name in os.environ:
+            audit_log("credential_retrieved", name=name, source="env")
             return os.environ.get(name)
         if name in self._cache:
+            audit_log("credential_retrieved", name=name, source="cache")
             return self._cache[name]
         if self.backend:
             try:
                 value = self.backend.get_secret(name)
                 if value:
                     self._cache[name] = value
+                    audit_log("credential_retrieved", name=name, source="backend")
                 return value
             except Exception:
                 return None
