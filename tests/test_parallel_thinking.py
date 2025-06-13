@@ -16,6 +16,8 @@ from core.optimization.parallel_thinking import (  # noqa: E402
 from core.interfaces import LLMProvider, QualityEvaluator  # noqa: E402
 from core.chat_v2 import CoRTConfig  # noqa: E402
 from core.recursive_engine_v2 import create_optimized_engine  # noqa: E402
+from core.model_router import ModelRouter  # noqa: E402
+from core.budget import BudgetManager  # noqa: E402
 
 
 class DummyLLM(LLMProvider):
@@ -60,17 +62,23 @@ async def test_parallel_generation():
 
 def test_engine_parallel_flag():
     cfg = CoRTConfig(enable_parallel_thinking=False)
-    engine = create_optimized_engine(cfg)
+    router = ModelRouter.from_config(cfg)
+    budget = BudgetManager(cfg.model, token_limit=cfg.budget_token_limit, catalog=[{"id": cfg.model, "pricing": {}}])
+    engine = create_optimized_engine(cfg, router=router, budget_manager=budget)
     assert engine.parallel_optimizer is None
 
     cfg = CoRTConfig(enable_parallel_thinking=True)
-    engine = create_optimized_engine(cfg)
+    router = ModelRouter.from_config(cfg)
+    budget = BudgetManager(cfg.model, token_limit=cfg.budget_token_limit, catalog=[{"id": cfg.model, "pricing": {}}])
+    engine = create_optimized_engine(cfg, router=router, budget_manager=budget)
     assert engine.parallel_optimizer is not None
 
 
 def test_threshold_propagation_parallel_engine():
     cfg = CoRTConfig(enable_parallel_thinking=True, quality_thresholds={"overall": 0.75})
-    engine = create_optimized_engine(cfg)
+    router = ModelRouter.from_config(cfg)
+    budget = BudgetManager(cfg.model, token_limit=cfg.budget_token_limit, catalog=[{"id": cfg.model, "pricing": {}}])
+    engine = create_optimized_engine(cfg, router=router, budget_manager=budget)
     assert engine.evaluator.thresholds["overall"] == 0.75
     assert engine.parallel_optimizer.quality_threshold == 0.75
 

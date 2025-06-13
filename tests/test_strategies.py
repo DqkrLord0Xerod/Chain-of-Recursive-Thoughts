@@ -7,6 +7,8 @@ from core.strategies import (
 from core.strategies.base import ThinkingStrategy
 from mypy import api
 from core.chat_v2 import CoRTConfig, create_default_engine
+from core.model_router import ModelRouter
+from core.budget import BudgetManager
 
 
 class DummyLLM:
@@ -42,13 +44,17 @@ async def test_load_strategy_fallback():
 @pytest.mark.asyncio
 async def test_engine_strategy_switch():
     cfg = CoRTConfig(thinking_strategy="fixed")
-    engine = create_default_engine(cfg)
+    router = ModelRouter.from_config(cfg)
+    budget = BudgetManager(cfg.model, token_limit=cfg.budget_token_limit, catalog=[{"id": cfg.model, "pricing": {}}])
+    engine = create_default_engine(cfg, router=router, budget_manager=budget)
     assert isinstance(engine.thinking_strategy, FixedThinkingStrategy)
 
 
 def test_threshold_propagation_default_engine():
     cfg = CoRTConfig(quality_thresholds={"overall": 0.8})
-    engine = create_default_engine(cfg)
+    router = ModelRouter.from_config(cfg)
+    budget = BudgetManager(cfg.model, token_limit=cfg.budget_token_limit, catalog=[{"id": cfg.model, "pricing": {}}])
+    engine = create_default_engine(cfg, router=router, budget_manager=budget)
     assert engine.evaluator.thresholds["overall"] == 0.8
     assert engine.thinking_strategy.quality_threshold == 0.8
 
