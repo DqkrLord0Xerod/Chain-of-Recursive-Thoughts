@@ -199,9 +199,14 @@ async def websocket_stream(websocket: WebSocket, session_id: str):
 @app.get("/metrics/summary")
 async def metrics_summary() -> Dict[str, object]:
     """Return summary statistics and recent anomalies."""
+    latency = {}
+    if hasattr(metrics_analyzer, "stage_latency"):
+        latency = {stage: list(v) for stage, v in metrics_analyzer.stage_latency.items()}
+
     return {
         "summary": metrics_analyzer.get_summary_stats(),
         "anomalies": list(metrics_analyzer.anomalies),
+        "stage_latency": latency,
     }
 
 
