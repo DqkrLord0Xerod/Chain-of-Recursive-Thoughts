@@ -8,7 +8,10 @@ from typing import AsyncIterator, Dict, List, Optional
 
 from core.prompt_evolution import evolve_prompt
 from monitoring.telemetry import record_thinking_metrics
-from core.chat_v2 import ThinkingResult, ThinkingRound
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:  # pragma: no cover - for type hints
+    from core.chat_v2 import ThinkingResult
 
 
 class LoopController:
@@ -159,6 +162,7 @@ class LoopController:
         metadata: Optional[Dict[str, object]] = None,
     ) -> ThinkingResult:
         """High level loop used by RecursiveThinkingEngine."""
+        from core.chat_v2 import ThinkingRound, ThinkingResult
 
         start_time = time.time()
         metadata = metadata or {}
@@ -177,7 +181,11 @@ class LoopController:
             rounds = await self.engine.thinking_strategy.determine_rounds(prompt)
 
         messages = memory_messages + history + [{"role": "user", "content": prompt}]
-        resp = await self.engine.cache_manager.chat(messages, temperature=temperature, role="assistant")
+        stage_start = time.time()
+        resp = await self.engine.cache_manager.chat(
+            messages, temperature=temperature, role="assistant"
+        )
+        initial_duration = time.time() - stage_start
         best_response = resp.content
         total_tokens = resp.usage.get("total_tokens", 0)
         quality = await self.evaluate_step(prompt, best_response)
@@ -190,7 +198,7 @@ class LoopController:
                 selected=True,
                 explanation="initial",
                 quality_score=quality,
-                duration=0.0,
+                duration=initial_duration,
             )
         ]
         quality_scores = [quality]
@@ -202,8 +210,14 @@ class LoopController:
                 f"Given the prompt:\n{prompt}\nCurrent answer:\n{best_response}\n"
                 f"Provide up to {alternatives_per_round} alternatives as JSON with keys 'alternatives', 'selection', 'thinking'."
             )
-            messages = memory_messages + history + [{"role": "user", "content": improve_prompt}]
-            alt_resp = await self.engine.cache_manager.chat(messages, temperature=temperature, role="assistant")
+            messages = memory_messages + history + [
+                {"role": "user", "content": improve_prompt}
+            ]
+            stage_start = time.time()
+            alt_resp = await self.engine.cache_manager.chat(
+                messages, temperature=temperature, role="assistant"
+            )
+            round_duration = time.time() - stage_start
             total_tokens += alt_resp.usage.get("total_tokens", 0)
             try:
                 data = json.loads(alt_resp.content)
@@ -234,7 +248,7 @@ class LoopController:
                     selected=True,
                     explanation=explanation,
                     quality_score=quality,
-                    duration=0.0,
+                    duration=round_duration,
                 )
             )
             quality_scores.append(quality)

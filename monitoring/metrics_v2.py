@@ -109,6 +109,12 @@ class MetricsAnalyzer:
 
         # Convergence tracking
         self.convergence_reasons: Dict[str, int] = defaultdict(int)
+        self.convergence_counters = self.convergence_reasons
+
+        # Stage latency histograms
+        self.stage_latency: Dict[str, Deque[float]] = defaultdict(
+            lambda: deque(maxlen=window_size)
+        )
 
         # Provider performance
         self.provider_latencies: Dict[str, Deque[float]] = defaultdict(
@@ -137,6 +143,11 @@ class MetricsAnalyzer:
             self.quality_scores.append(metrics.quality_scores[-1])
         self.token_usage.append(metrics.total_tokens)
         self.round_counts.append(metrics.rounds_completed)
+
+        # Stage latency tracking
+        for idx, dur in enumerate(metrics.round_durations):
+            stage = "initial" if idx == 0 else f"round_{idx}"
+            self.stage_latency[stage].append(dur)
 
         # Update convergence tracking
         if metrics.convergence_reason:
@@ -317,6 +328,9 @@ class MetricsAnalyzer:
             "recent_efficiency": np.mean([s.efficiency_score for s in recent_sessions]),
             "anomaly_rate": len(self.anomalies) / len(self.sessions) if self.sessions else 0,
             "hourly_patterns": self._analyze_hourly_patterns(),
+            "stage_latency": {
+                stage: list(values) for stage, values in self.stage_latency.items()
+            },
         }
 
     def _analyze_hourly_patterns(self) -> Dict[str, Any]:
