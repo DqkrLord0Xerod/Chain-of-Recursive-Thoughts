@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     embed_url: str = "https://openrouter.ai/api/v1/embeddings"
     frontend_url: str = "http://localhost:3000"
     ws_base_url: str = "ws://localhost:8000"
+    thinking_strategy: str = Field("adaptive", env="THINKING_STRATEGY")
 
     class Config:
         env_file = ".env"
@@ -145,6 +146,8 @@ class CacheSettings(BaseSettings):
     semantic_cache_enabled: bool = True
     semantic_cache_threshold: float = 0.95
     semantic_cache_max_entries: int = 10000
+    semantic_cache_ttl: int = 3600
+    semantic_cache_min_hits: int = 0
 
     class Config:
         case_sensitive = False

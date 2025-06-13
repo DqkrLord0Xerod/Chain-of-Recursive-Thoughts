@@ -9,7 +9,10 @@ from types import SimpleNamespace  # noqa: E402
 
 import pytest  # noqa: E402
 
-from core.optimization.parallel_thinking import ParallelThinkingOptimizer  # noqa: E402
+from core.optimization.parallel_thinking import (  # noqa: E402
+    ParallelThinkingOptimizer,
+    BatchThinkingOptimizer,
+)
 from core.interfaces import LLMProvider, QualityEvaluator  # noqa: E402
 from core.chat_v2 import CoRTConfig  # noqa: E402
 from core.recursive_engine_v2 import create_optimized_engine  # noqa: E402
@@ -111,3 +114,23 @@ async def test_critic_changes_selection():
     )
 
     assert best == "a2"
+
+
+@pytest.mark.asyncio
+async def test_batch_optimizer_multiple_prompts():
+    llm = DummyLLM()
+    opt = ParallelThinkingOptimizer(
+        llm,
+        DummyEval(),
+        max_parallel=3,
+        timeout_per_round=1.0,
+    )
+    batch = BatchThinkingOptimizer(opt, batch_size=3, batch_timeout=0.01)
+
+    start = time.perf_counter()
+    results = await batch.think_batch(["p1", "p2", "p3"])
+    duration = time.perf_counter() - start
+
+    assert len(results) == 3
+    assert all(r[0] == "alt" for r in results)
+    assert duration < 0.5

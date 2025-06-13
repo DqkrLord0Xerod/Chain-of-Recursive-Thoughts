@@ -12,3 +12,10 @@ Grafana can be used to visualize these metrics with the provided dashboard.
 
 The dashboard displays request latency, convergence details and other
 metrics from `metrics_v2.py`.
+
+## Enabling Tracing
+
+Tracing is initialized in `recthink_web_v2.py` using functions from
+`monitoring/telemetry.py`. Call `initialize_telemetry` and then
+`instrument_fastapi(app)` to attach tracing middleware. Ensure the
+`opentelemetry-instrumentation-fastapi` package is installed.

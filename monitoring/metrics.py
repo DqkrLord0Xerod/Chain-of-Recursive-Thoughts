@@ -13,6 +13,7 @@ class RunMetrics:
     token_usage: int
     num_rounds: int
     convergence_reason: str
+    quality_scores: List[float] = field(default_factory=list)
     timestamp: datetime = field(default_factory=datetime.utcnow)
 
 
@@ -29,12 +30,14 @@ class MetricsRecorder:
         token_usage: int,
         num_rounds: int,
         convergence_reason: str,
+        quality_scores: List[float] | None = None,
     ) -> None:
         run = RunMetrics(
             processing_time=processing_time,
             token_usage=token_usage,
             num_rounds=num_rounds,
             convergence_reason=convergence_reason,
+            quality_scores=quality_scores or [],
         )
         self.runs.append(run)
         self.logger.info("run_metrics", **asdict(run))
