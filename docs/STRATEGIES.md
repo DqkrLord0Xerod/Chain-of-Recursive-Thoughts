@@ -19,8 +19,30 @@ resolved by `core.strategies.load_strategy`.
 ```python
 from core import CoRTConfig, create_default_engine
 
-config = CoRTConfig(thinking_strategy="fixed")
+config = CoRTConfig(
+    thinking_strategy="fixed",
+    quality_thresholds={"overall": 0.8},
+)
 engine = create_default_engine(config)
 ```
 
 Unknown strategy names fall back to the adaptive implementation.
+
+## Advanced configuration
+
+`load_strategy` can be used directly when you need to pass custom parameters or
+register your own implementation.
+
+```python
+from core.strategies import load_strategy
+from core.chat_v2 import RecursiveThinkingEngine
+
+strategy = load_strategy("fixed", llm, evaluator, rounds=2)
+engine = RecursiveThinkingEngine(
+    llm=llm,
+    cache=cache,
+    evaluator=evaluator,
+    context_manager=context,
+    thinking_strategy=strategy,
+)
+```
