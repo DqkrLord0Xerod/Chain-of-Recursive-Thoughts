@@ -2,6 +2,7 @@ import importlib
 import os
 import sys
 from types import ModuleType, SimpleNamespace
+from importlib.metadata import EntryPoint
 
 import pytest
 
@@ -35,19 +36,11 @@ class DummyEval:
         return 0.0
 
 
-class DummyEP:
-    name = "dummy"
-
-    def load(self):
-        class DummyStrategy(strategies.FixedThinkingStrategy):
-            pass
-
-        return DummyStrategy
-
-
 def fake_entry_points(*, group=None):
     if group == "mils_strategies":
-        return [DummyEP()]
+        path = os.path.join(os.path.dirname(__file__), "mocks")
+        sys.path.insert(0, path)
+        return [EntryPoint("dummy", "strategy_plugin:PluginStrategy", group)]
     return []
 
 
@@ -57,4 +50,4 @@ async def test_plugin_registry(monkeypatch):
     importlib.reload(strategies)
     assert "dummy" in strategies.available_strategies()
     strat = strategies.load_strategy("dummy", DummyLLM(), DummyEval())
-    assert strat.__class__.__name__ == "DummyStrategy"
+    assert strat.__class__.__name__ == "PluginStrategy"
