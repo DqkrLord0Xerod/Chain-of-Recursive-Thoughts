@@ -33,7 +33,6 @@ from core.budget import BudgetManager
 from core.cache_manager import CacheManager
 from core.metrics_manager import MetricsManager
 from core.conversation import ConversationManager
-from core.loop_controller import LoopController
 from core.tools import ToolRegistry, SearchTool, PythonExecutionTool  # noqa: F401
 from core.memory import FaissMemoryStore
 from api import fetch_models  # noqa: F401
@@ -142,6 +141,9 @@ class RecursiveThinkingEngine:
         self.tools = tools or ToolRegistry()
         self.planner = planner
         self.memory_store = memory_store
+
+        from core.loop_controller import LoopController
+
         self.loop_controller = LoopController(self)
 
         if hasattr(self.thinking_strategy, "set_tools"):
