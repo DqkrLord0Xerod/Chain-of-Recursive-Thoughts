@@ -10,8 +10,9 @@ async def main() -> None:
     """Run the recursive thinking chat CLI.
 
     Commands:
-        exit      Quit the program.
-        save      Save the conversation history to ``conversation.json``.
+        exit                 Quit the program.
+        save                 Save the conversation history to ``conversation.json``.
+        history [session_id] Show saved loop history for a session.
     """
     print("🤖 Recursive Thinking Chat v2")
     print("=" * 50)
@@ -27,6 +28,8 @@ async def main() -> None:
     config = CoRTConfig(api_key=api_key, model=settings.model)
     engine = create_optimized_engine(config)
 
+    session_id = input("Session ID (default 'default'): ").strip() or "default"
+
     print("\nChat initialized! Type 'exit' to quit, 'save' to save conversation.")
     print("The AI will think recursively before each response.\n")
 
@@ -37,10 +40,25 @@ async def main() -> None:
         if user_input.lower() == "save":
             await engine.save_conversation("conversation.json")
             continue
+        if user_input.lower().startswith("history"):
+            parts = user_input.split()
+            sid = parts[1] if len(parts) > 1 else session_id
+            history = await engine.loop_controller.load_loop_history(sid)
+            if not history:
+                print("No history available.")
+            else:
+                for i, state in enumerate(history, 1):
+                    print(
+                        f"Run {i}: rounds={len(state.rounds)}, "
+                        f"reason={state.convergence_reason}"
+                    )
+            continue
         if not user_input:
             continue
 
-        result = await engine.think_and_respond(user_input)
+        result = await engine.think_and_respond(
+            user_input, session_id=session_id
+        )
         print(f"\n🤖 AI FINAL RESPONSE: {result.response}\n")
         print("\n--- COMPLETE THINKING PROCESS ---")
         for item in result.thinking_history:
