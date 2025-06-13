@@ -2,6 +2,11 @@ from __future__ import annotations
 
 from typing import Dict, List, Optional
 
+import structlog
+
+
+logger = structlog.get_logger(__name__)
+
 from api import fetch_models
 
 
@@ -47,6 +52,12 @@ class BudgetManager:
         from exceptions import TokenLimitError
 
         if self.will_exceed_budget(next_tokens):
+            logger.warning(
+                "token_limit_exceeded",
+                used=self.tokens_used,
+                attempted=next_tokens,
+                limit=self.token_limit,
+            )
             raise TokenLimitError("Token budget exceeded")
 
     def record_llm_usage(self, tokens: int) -> None:
