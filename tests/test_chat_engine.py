@@ -26,10 +26,17 @@ class DummyEvaluator(QualityEvaluator):
 
 
 class OneRoundStrategy(ThinkingStrategy):
-    async def determine_rounds(self, prompt: str) -> int:
+    async def determine_rounds(self, prompt: str, *, request_id: str) -> int:
         return 1
 
-    async def should_continue(self, rounds_completed: int, quality_scores: List[float], responses: List[str]):
+    async def should_continue(
+        self,
+        rounds_completed: int,
+        quality_scores: List[float],
+        responses: List[str],
+        *,
+        request_id: str,
+    ):
         return False, 'done'
 
 

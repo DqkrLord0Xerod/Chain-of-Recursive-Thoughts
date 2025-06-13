@@ -11,7 +11,7 @@ class FixedThinkingStrategy(ThinkingStrategy):
     def __init__(self, rounds: int = 1) -> None:
         self.rounds = rounds
 
-    async def determine_rounds(self, prompt: str) -> int:
+    async def determine_rounds(self, prompt: str, *, request_id: str) -> int:
         return self.rounds
 
     async def should_continue(

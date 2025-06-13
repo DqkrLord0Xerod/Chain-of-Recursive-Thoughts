@@ -38,7 +38,7 @@ class DummyEvaluator(QualityEvaluator):
 
 
 class DummyStrategy:
-    async def determine_rounds(self, prompt: str) -> int:
+    async def determine_rounds(self, prompt: str, *, request_id: str) -> int:
         return 1
 
     async def should_continue(self, rounds_completed: int, quality_scores: List[float], responses: List[str]):

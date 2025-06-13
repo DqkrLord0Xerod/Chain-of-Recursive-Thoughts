@@ -38,10 +38,17 @@ class DummyEvaluator(QualityEvaluator):
 
 
 class NoOpStrategy:
-    async def determine_rounds(self, prompt: str) -> int:
+    async def determine_rounds(self, prompt: str, *, request_id: str) -> int:
         return 1
 
-    async def should_continue(self, rounds_completed, quality_scores, responses):
+    async def should_continue(
+        self,
+        rounds_completed,
+        quality_scores,
+        responses,
+        *,
+        request_id: str,
+    ):
         return rounds_completed < 1, "done"
 
 
