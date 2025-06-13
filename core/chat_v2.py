@@ -183,6 +183,24 @@ class RecursiveThinkingEngine:
 
 
 def create_default_engine(config: CoRTConfig) -> RecursiveThinkingEngine:
+    """Build a :class:`RecursiveThinkingEngine` from configuration."""
+
+    if config.provider.lower() == "openai":
+        llm = OpenAILLMProvider(
+            api_key=config.api_key or os.getenv("OPENAI_API_KEY"),
+            model=config.model,
+            max_retries=config.max_retries,
+        )
+    else:
+        llm = OpenRouterLLMProvider(
+            api_key=config.api_key or os.getenv("OPENROUTER_API_KEY"),
+            model=config.model,
+            max_retries=config.max_retries,
+        )
+
+    cache = InMemoryLRUCache(max_size=config.cache_size)
+    evaluator = EnhancedQualityEvaluator(thresholds=config.quality_thresholds)
+
     """Build a :class:`RecursiveThinkingEngine` using :class:`StrategyFactory`."""
 
     if config.provider.lower() == "openai":
@@ -213,6 +231,10 @@ def create_default_engine(config: CoRTConfig) -> RecursiveThinkingEngine:
         advanced=config.advanced_convergence,
     )
 
+    tokenizer = tiktoken.get_encoding("cl100k_base")
+    ctx_mgr = ContextManager(config.max_context_tokens, tokenizer)
+
+    strategy = load_strategy(config.thinking_strategy, llm, evaluator)
     tools = ToolRegistry()
     if config.enable_tools:
         tools.register(SearchTool())
@@ -222,6 +244,9 @@ def create_default_engine(config: CoRTConfig) -> RecursiveThinkingEngine:
         llm=llm,
         cache=cache,
         evaluator=evaluator,
+        context_manager=ctx_mgr,
+        thinking_strategy=strategy,
+        convergence_strategy=convergence,
         context_manager=context_manager,
         thinking_strategy=strategy,
         convergence_strategy=convergence,
