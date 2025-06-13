@@ -236,6 +236,5 @@ def create_default_engine(
         tools=tools,
         model_router=router,
         budget_manager=budget_manager,
-        tools=tools,
         output_filter=output_filter,
     )

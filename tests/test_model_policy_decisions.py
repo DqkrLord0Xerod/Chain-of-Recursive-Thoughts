@@ -26,6 +26,12 @@ class DummyProvider:
     async def chat(self, messages, **kwargs):
         return None
 
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
+
 
 providers_stub.OpenAILLMProvider = DummyProvider
 providers_stub.OpenRouterLLMProvider = DummyProvider
@@ -37,6 +43,11 @@ providers_stub.MultiProviderLLM = type(
 providers_stub.LLMProvider = DummyProvider
 core_stub.providers = providers_stub
 sys.modules.setdefault("core.providers", providers_stub)
+
+budget_stub = types.ModuleType("budget")
+budget_stub.BudgetManager = object
+core_stub.budget = budget_stub
+sys.modules.setdefault("core.budget", budget_stub)
 
 spec = importlib.util.spec_from_file_location(
     "model_policy", CORE_DIR / "model_policy.py"
@@ -52,6 +63,7 @@ spec_router = importlib.util.spec_from_file_location(
 model_router = importlib.util.module_from_spec(spec_router)
 spec_router.loader.exec_module(model_router)
 sys.modules["core.model_router"] = model_router
+core_stub.model_router = model_router
 ModelRouter = model_router.ModelRouter
 
 
