@@ -18,6 +18,7 @@ class DummyEngine:
         message,
         thinking_rounds=None,
         alternatives_per_round=3,
+        session_id=None,
     ):
         self.captured["rounds"] = thinking_rounds
         self.captured["alts"] = alternatives_per_round

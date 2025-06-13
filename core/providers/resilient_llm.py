@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional
 import structlog
 
 from core.providers.llm import LLMProvider, LLMResponse
+from monitoring.telemetry import generate_request_id
 from core.resilience.circuit_breaker import CircuitBreaker, CircuitOpenError
 from core.resilience.retry_policies import (
     ExponentialBackoffPolicy,
@@ -143,8 +144,10 @@ class ResilientLLMProvider:
             APIError: If all providers fail
         """
         start_time = time.time()
+        metadata = metadata or {}
         self._request_count += 1
-        request_id = f"req_{self._request_count}"
+        request_id = metadata.get("request_id") or generate_request_id()
+        metadata["request_id"] = request_id
         
         logger.info(
             "resilient_llm_request",

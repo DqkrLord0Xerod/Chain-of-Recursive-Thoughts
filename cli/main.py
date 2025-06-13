@@ -3,6 +3,7 @@ from __future__ import annotations
 from core.chat_v2 import CoRTConfig
 from core.recursive_engine_v2 import create_optimized_engine
 from config import settings
+from core.security import CredentialManager
 
 
 async def main() -> None:
@@ -15,9 +16,12 @@ async def main() -> None:
     print("🤖 Recursive Thinking Chat v2")
     print("=" * 50)
 
-    api_key = settings.openrouter_api_key
+    manager = CredentialManager()
+    api_key = settings.openrouter_api_key or manager.get("OPENROUTER_API_KEY")
     if not api_key:
-        print("Error: OPENROUTER_API_KEY not set. Please export it or add to .env")
+        print(
+            "Error: OPENROUTER_API_KEY not set. Provide it via env or secrets file"
+        )
         return
 
     config = CoRTConfig(api_key=api_key, model=settings.model)

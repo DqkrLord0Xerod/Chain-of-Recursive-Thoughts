@@ -10,6 +10,7 @@ from .adaptive import AdaptiveThinkingStrategy
 from .hybrid import HybridToolStrategy
 from .fixed import FixedThinkingStrategy
 
+
 _REGISTRY: Dict[str, Type[ThinkingStrategy]] = {}
 
 
@@ -46,11 +47,15 @@ _load_entrypoints()
 
 from .factory import load_strategy  # noqa: E402
 
+from .factory import StrategyFactory, load_strategy
+
+
 __all__ = [
     "ThinkingStrategy",
     "AdaptiveThinkingStrategy",
     "FixedThinkingStrategy",
     "HybridToolStrategy",
+    "StrategyFactory",
     "load_strategy",
     "register_strategy",
     "get_strategy",

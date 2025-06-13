@@ -18,7 +18,7 @@ from core.interfaces import (
 )
 from core.context_manager import ContextManager
 from core.recursion import ConvergenceStrategy
-from core.strategies import ThinkingStrategy, load_strategy  # noqa: F401
+from core.strategies import StrategyFactory, ThinkingStrategy, load_strategy  # noqa: F401
 from monitoring.metrics import MetricsRecorder
 from core.providers import (  # noqa: F401
     OpenRouterLLMProvider,
@@ -33,11 +33,11 @@ from core.budget import BudgetManager
 from core.cache_manager import CacheManager
 from core.metrics_manager import MetricsManager
 from core.conversation import ConversationManager
-from core.loop_controller import LoopController
 from core.tools import ToolRegistry, SearchTool, PythonExecutionTool  # noqa: F401
 from core.memory import FaissMemoryStore
 from api import fetch_models  # noqa: F401
 from config import settings
+from core.security import OutputFilter
 import tiktoken  # noqa: F401
 
 
@@ -86,7 +86,9 @@ class CoRTConfig:
     budget_token_limit: int = 100000
     enable_parallel_thinking: bool = True
     enable_tools: bool = True
-    thinking_strategy: str = "adaptive"
+    thinking_strategy: str = field(
+        default_factory=lambda: settings.thinking_strategy
+    )
     quality_thresholds: Optional[Dict[str, float]] = None
     advanced_convergence: bool = False
     memory_dim: int = 1536
@@ -114,6 +116,7 @@ class RecursiveThinkingEngine:
         tools: Optional[ToolRegistry] = None,
         planner: Optional["ImprovementPlanner"] = None,
         memory_store: Optional["FaissMemoryStore"] = None,
+        output_filter: Optional["OutputFilter"] = None,
     ) -> None:
         self.llm = llm
         self.cache = cache
@@ -142,7 +145,11 @@ class RecursiveThinkingEngine:
         self.tools = tools or ToolRegistry()
         self.planner = planner
         self.memory_store = memory_store
+
+        from core.loop_controller import LoopController
+
         self.loop_controller = LoopController(self)
+        self.output_filter = output_filter
 
         if hasattr(self.thinking_strategy, "set_tools"):
             self.thinking_strategy.set_tools(self.tools)
@@ -158,6 +165,7 @@ class RecursiveThinkingEngine:
         thinking_rounds: Optional[int] = None,
         alternatives_per_round: int = 3,
         temperature: float = 0.7,
+        session_id: Optional[str] = None,
         metadata: Optional[Dict[str, object]] = None,
     ) -> ThinkingResult:
         """Execute the recursive loop via :class:`LoopController`."""
@@ -166,8 +174,11 @@ class RecursiveThinkingEngine:
             thinking_rounds=thinking_rounds,
             alternatives_per_round=alternatives_per_round,
             temperature=temperature,
+            session_id=session_id,
             metadata=metadata,
         )
+        if self.output_filter:
+            result.response = self.output_filter.filter(result.response)
         return result
 
 
@@ -190,6 +201,30 @@ def create_default_engine(config: CoRTConfig) -> RecursiveThinkingEngine:
     cache = InMemoryLRUCache(max_size=config.cache_size)
     evaluator = EnhancedQualityEvaluator(thresholds=config.quality_thresholds)
 
+    """Build a :class:`RecursiveThinkingEngine` using :class:`StrategyFactory`."""
+
+    if config.provider.lower() == "openai":
+        llm = OpenAILLMProvider(
+            api_key=config.api_key or os.getenv("OPENAI_API_KEY"),
+            model=config.model,
+            max_retries=config.max_retries,
+        )
+    else:
+        llm = OpenRouterLLMProvider(
+            api_key=config.api_key or os.getenv("OPENROUTER_API_KEY"),
+            model=config.model,
+            max_retries=config.max_retries,
+        )
+
+    cache = InMemoryLRUCache(max_size=config.cache_size)
+    evaluator = EnhancedQualityEvaluator(thresholds=config.quality_thresholds)
+
+    tokenizer = tiktoken.get_encoding("cl100k_base")
+    context_manager = ContextManager(config.max_context_tokens, tokenizer)
+
+    factory = StrategyFactory(llm, evaluator)
+    strategy = factory.create(config.thinking_strategy)
+
     convergence = ConvergenceStrategy(
         evaluator.score,
         evaluator.score,
@@ -200,6 +235,10 @@ def create_default_engine(config: CoRTConfig) -> RecursiveThinkingEngine:
     ctx_mgr = ContextManager(config.max_context_tokens, tokenizer)
 
     strategy = load_strategy(config.thinking_strategy, llm, evaluator)
+    tools = ToolRegistry()
+    if config.enable_tools:
+        tools.register(SearchTool())
+        tools.register(PythonExecutionTool())
 
     return RecursiveThinkingEngine(
         llm=llm,
@@ -208,4 +247,8 @@ def create_default_engine(config: CoRTConfig) -> RecursiveThinkingEngine:
         context_manager=ctx_mgr,
         thinking_strategy=strategy,
         convergence_strategy=convergence,
+        context_manager=context_manager,
+        thinking_strategy=strategy,
+        convergence_strategy=convergence,
+        tools=tools,
     )
