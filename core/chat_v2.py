@@ -10,7 +10,7 @@ import os  # noqa: F401
 
 import structlog
 
-from .strategies import AdaptiveThinkingStrategy  # noqa: F401
+from core.strategies import ThinkingStrategy, strategy_from_config
 from core.interfaces import (
     CacheProvider,
     LLMProvider,
@@ -18,7 +18,6 @@ from core.interfaces import (
 )
 from core.context_manager import ContextManager
 from core.recursion import ConvergenceStrategy
-from core.strategies import StrategyFactory, ThinkingStrategy, load_strategy  # noqa: F401
 from monitoring.metrics import MetricsRecorder
 from core.providers import (  # noqa: F401
     OpenRouterLLMProvider,
@@ -194,15 +193,29 @@ def create_default_engine(
 ) -> RecursiveThinkingEngine:
     """Build a :class:`RecursiveThinkingEngine` from configuration."""
 
-    selector: Optional[ModelSelector] = None
-    if config.model_policy:
-        metadata = fetch_models()
-        selector = ModelSelector(metadata, config.model_policy)
+
+    if config.provider.lower() == "openai":
+        llm = OpenAILLMProvider(
+            api_key=config.api_key or os.getenv("OPENAI_API_KEY"),
+            model=config.model,
+            max_retries=config.max_retries,
+        )
+    else:
+        llm = OpenRouterLLMProvider(
+            api_key=config.api_key or os.getenv("OPENROUTER_API_KEY"),
+            model=config.model,
+            max_retries=config.max_retries,
+        )
+
+    cache = InMemoryLRUCache(max_size=config.cache_size)
+    evaluator = EnhancedQualityEvaluator(thresholds=config.quality_thresholds)
 
     tokenizer = tiktoken.get_encoding("cl100k_base")
     ctx_mgr = ContextManager(config.max_context_tokens, tokenizer)
 
+    strategy = strategy_from_config(config, llm, evaluator)
     strategy = StrategyFactory(llm, evaluator).create(config.thinking_strategy)
+
 
 
     strategy = load_strategy(config.thinking_strategy, llm, evaluator)
@@ -221,6 +234,10 @@ def create_default_engine(
         llm=llm,
         cache=cache,
         evaluator=evaluator,
+        context_manager=context_manager,
+        thinking_strategy=strategy,
+        convergence_strategy=convergence,
+        tools=tools,
         context_manager=ctx_mgr,
         thinking_strategy=strategy,
         convergence_strategy=convergence,

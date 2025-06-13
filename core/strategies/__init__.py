@@ -45,9 +45,7 @@ register_strategy("hybrid", HybridToolStrategy)
 
 _load_entrypoints()
 
-from .factory import load_strategy  # noqa: E402
-
-from .factory import StrategyFactory, load_strategy
+from .factory import StrategyFactory, load_strategy, strategy_from_config  # noqa: E402
 
 
 __all__ = [
@@ -57,6 +55,7 @@ __all__ = [
     "HybridToolStrategy",
     "StrategyFactory",
     "load_strategy",
+    "strategy_from_config",
     "register_strategy",
     "get_strategy",
     "available_strategies",

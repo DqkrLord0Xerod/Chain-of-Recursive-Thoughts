@@ -375,10 +375,27 @@ def create_optimized_engine(
     """Build an :class:`OptimizedRecursiveEngine` from configuration."""
 
     selector: Optional[ModelSelector] = None
+    default_model = config.model
     if config.model_policy:
         metadata = fetch_models()
         selector = ModelSelector(metadata, config.model_policy)
 
+    router = ModelRouter(
+        provider=config.provider,
+        api_key=config.api_key,
+        providers=config.providers,
+        provider_weights=config.provider_weights,
+        model=default_model,
+        selector=selector,
+        max_retries=config.max_retries,
+    )
+
+    critic = None
+    if selector:
+        try:
+            critic = CriticLLM(router.provider_for_role("critic"))
+        except Exception:  # pragma: no cover - optional critic
+            critic = None
     router = router or ModelRouter.from_config(config, selector)
     llm = router.provider_for_role("assistant")
 
