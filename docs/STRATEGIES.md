@@ -58,3 +58,22 @@ The active strategy can also be set via the `THINKING_STRATEGY` environment
 variable or the equivalent setting in a configuration file. The factory will use
 this value when no explicit strategy name is provided.
 
+## Plugins
+
+Third-party packages can register new strategies via the `mils_strategies`
+entry point group. Each entry point should resolve to a
+`ThinkingStrategy` subclass:
+
+```toml
+[project.entry-points.mils_strategies]
+my_strategy = "mypkg.strategies:MyStrategy"
+```
+
+After installation the strategy becomes selectable just like built-in ones:
+
+```python
+from core.strategies import load_strategy
+
+strategy = load_strategy("my_strategy", llm, evaluator)
+```
+

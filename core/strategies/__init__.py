@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from importlib.metadata import entry_points
+from importlib.metadata import entry_points, EntryPoint
 from typing import Dict, Type
 
 from .base import ThinkingStrategy
@@ -31,10 +31,20 @@ def available_strategies() -> list[str]:
 
 def _load_entrypoints(group: str = "mils_strategies") -> None:
     """Load strategy plugins from entry points."""
-    for ep in entry_points(group=group):
+    try:
+        eps = entry_points()
+        if hasattr(eps, "select"):
+            eps = eps.select(group=group)
+        else:  # pragma: no cover - older importlib
+            eps = eps.get(group, [])
+    except Exception:  # pragma: no cover - best effort
+        eps = []
+
+    for ep in eps:
         try:
-            cls = ep.load()
-            register_strategy(ep.name, cls)
+            obj = ep.load()
+            if isinstance(obj, type) and issubclass(obj, ThinkingStrategy):
+                register_strategy(ep.name, obj)
         except Exception:  # pragma: no cover - best effort
             pass
 
