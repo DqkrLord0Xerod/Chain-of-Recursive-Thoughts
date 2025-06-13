@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from core.interfaces import LLMProvider, QualityEvaluator
+from core.interfaces import LLMProvider
+from .base import ThinkingStrategy, QualityEvaluator
 
 from .adaptive import AdaptiveThinkingStrategy
 from .fixed import FixedThinkingStrategy
 from .hybrid import HybridToolStrategy
-from .base import ThinkingStrategy
 
 
 _STRATEGY_MAP = {
