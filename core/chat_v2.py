@@ -33,6 +33,7 @@ from core.budget import BudgetManager
 from core.cache_manager import CacheManager
 from core.metrics_manager import MetricsManager
 from core.conversation import ConversationManager
+from core.loop_controller import LoopController
 from core.tools import ToolRegistry, SearchTool, PythonExecutionTool  # noqa: F401
 from core.memory import FaissMemoryStore
 from api import fetch_models  # noqa: F401
@@ -141,6 +142,7 @@ class RecursiveThinkingEngine:
         self.tools = tools or ToolRegistry()
         self.planner = planner
         self.memory_store = memory_store
+        self.loop_controller = LoopController(self)
 
         if hasattr(self.thinking_strategy, "set_tools"):
             self.thinking_strategy.set_tools(self.tools)
@@ -148,6 +150,25 @@ class RecursiveThinkingEngine:
     async def run_tool(self, name: str, task: str) -> str:
         """Execute a registered tool."""
         return await self.tools.run(name, task)
+
+    async def think_and_respond(
+        self,
+        prompt: str,
+        *,
+        thinking_rounds: Optional[int] = None,
+        alternatives_per_round: int = 3,
+        temperature: float = 0.7,
+        metadata: Optional[Dict[str, object]] = None,
+    ) -> ThinkingResult:
+        """Execute the recursive loop via :class:`LoopController`."""
+        result = await self.loop_controller.respond(
+            prompt,
+            thinking_rounds=thinking_rounds,
+            alternatives_per_round=alternatives_per_round,
+            temperature=temperature,
+            metadata=metadata,
+        )
+        return result
 
 
 def create_default_engine(config: CoRTConfig) -> RecursiveThinkingEngine:
