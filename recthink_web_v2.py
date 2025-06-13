@@ -7,7 +7,7 @@ from typing import Dict, Optional, List
 
 import structlog
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -20,6 +20,7 @@ from core.loop_controller import LoopController
 from core.optimization.parallel_thinking import BatchThinkingOptimizer
 from monitoring.metrics_v2 import MetricsAnalyzer, ThinkingMetrics
 from monitoring.telemetry import initialize_telemetry, instrument_fastapi
+from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 from config.config import load_production_config
 
 app = FastAPI(title="RecThink API v2")
@@ -184,6 +185,12 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
         pass
     finally:
         await websocket.close()
+
+
+@app.get("/metrics")
+async def prometheus_metrics() -> Response:
+    """Expose Prometheus metrics."""
+    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
 @app.get("/health/providers")

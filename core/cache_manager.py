@@ -19,6 +19,7 @@ from core.interfaces import (
 from config.config import CacheSettings
 from core.model_policy import ModelSelector
 from core.budget import BudgetManager
+from monitoring.telemetry import record_cache_metrics
 
 logger = structlog.get_logger(__name__)
 
@@ -68,9 +69,12 @@ class CacheManager:
                 key=key[:8],
                 request_id=(metadata or {}).get("request_id"),
             )
+            record_cache_metrics(True, cache_type=self.cache.__class__.__name__)
             if hasattr(cached, "cached"):
                 cached.cached = True
             return cached
+        else:
+            record_cache_metrics(False, cache_type=self.cache.__class__.__name__)
 
         # Check semantic cache
         semantic_hit = None
@@ -84,9 +88,11 @@ class CacheManager:
             resp = await self.cache.get(semantic_hit)
             if resp:
                 logger.info("semantic_cache_hit", key=semantic_hit[:8])
+                record_cache_metrics(True, cache_type="semantic")
                 if hasattr(resp, "cached"):
                     resp.cached = True
                 return resp
+            record_cache_metrics(False, cache_type="semantic")
 
         if self.model_selector:
             self.llm.model = self.model_selector.model_for_role(role)
