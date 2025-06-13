@@ -124,6 +124,28 @@ def test_provider_health_endpoint(monkeypatch):
     assert data["providers"][0]["provider"] == "p1"
 
 
+def test_cache_health_endpoint(monkeypatch):
+    client = TestClient(recthink_web_v2.app)
+
+    class DummyCache:
+        async def stats(self):
+            return {"type": "memory", "entries": 1}
+
+    class DummyEngine:
+        def __init__(self):
+            self.cache = DummyCache()
+
+    recthink_web_v2.chat_sessions["s1"] = DummyEngine()
+
+    resp = client.get("/health/cache")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["caches"][0]["session_id"] == "s1"
+    assert data["caches"][0]["type"] == "memory"
+
+    recthink_web_v2.chat_sessions.clear()
+
+
 def test_batch_chat_endpoint(monkeypatch):
     client = TestClient(recthink_web_v2.app)
 

@@ -37,3 +37,12 @@ Tracing is initialized in `recthink_web_v2.py` using functions from
 `instrument_fastapi(app)` to attach tracing middleware. Ensure the
 `opentelemetry-instrumentation-fastapi` package is installed.
 
+## Environment Variables
+
+Set the following variables to enable trace and metric exporters:
+
+- `JAEGER_ENDPOINT` – host and port of the Jaeger agent. When provided,
+  traces will be sent to Jaeger.
+- `PROMETHEUS_PORT` – port to expose the Prometheus metrics endpoint.
+  Metrics are served at `http://localhost:${PROMETHEUS_PORT}/metrics`.
+

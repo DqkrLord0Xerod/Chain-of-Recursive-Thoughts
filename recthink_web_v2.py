@@ -194,6 +194,22 @@ async def provider_health() -> Dict[str, List[Dict[str, object]]]:
     return {"providers": health}
 
 
+@app.get("/health/cache")
+async def cache_health() -> Dict[str, List[Dict[str, object]]]:
+    """Return statistics for active cache backends."""
+    caches: List[Dict[str, object]] = []
+    for sid, engine in chat_sessions.items():
+        cache = getattr(engine, "cache", None)
+        if cache and hasattr(cache, "stats"):
+            try:
+                stats = await cache.stats()
+            except Exception as exc:  # pragma: no cover - best effort
+                logger.warning("cache_stats_failed", session=sid, error=str(exc))
+                stats = {"error": str(exc)}
+            caches.append({"session_id": sid, **stats})
+    return {"caches": caches}
+
+
 @app.get("/health")
 async def health() -> Dict[str, str]:
     """Basic health check for service availability."""
