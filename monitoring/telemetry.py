@@ -29,6 +29,7 @@ from prometheus_client import start_http_server
 import structlog
 
 logger = structlog.get_logger(__name__)
+audit_logger = structlog.get_logger("audit")
 
 T = TypeVar('T')
 
@@ -56,6 +57,11 @@ def configure_logging(level: str = "INFO", fmt: str = "json") -> None:
 
     logging.basicConfig(level=getattr(logging, level.upper(), logging.INFO))
     structlog.configure(processors=processors)
+
+
+def audit_log(event: str, **kwargs: Any) -> None:
+    """Record an audit log event."""
+    audit_logger.info(event, **kwargs)
 
 
 class CoRTMetrics:
