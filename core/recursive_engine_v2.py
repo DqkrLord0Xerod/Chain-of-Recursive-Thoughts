@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 from typing import Dict, List, Optional, Tuple
 
 import structlog
@@ -17,10 +16,9 @@ from core.interfaces import (
 )
 from core.chat_v2 import CoRTConfig
 from core.model_policy import ModelSelector
+from core.model_router import ModelRouter
 from api import fetch_models
 from core.providers import (
-    OpenRouterLLMProvider,
-    OpenAILLMProvider,
     InMemoryLRUCache,
     EnhancedQualityEvaluator,
     CriticLLM,
@@ -32,9 +30,13 @@ from core.optimization.parallel_thinking import (
 from core.recursion import ConvergenceStrategy
 from core.loop_controller import LoopController
 from monitoring.telemetry import trace_method
+from core.security import CredentialManager
 
 
 logger = structlog.get_logger(__name__)
+
+
+credential_manager = CredentialManager()
 
 
 class OptimizedRecursiveEngine:
@@ -52,10 +54,11 @@ class OptimizedRecursiveEngine:
 
     def __init__(
         self,
-        llm: LLMProvider,
+        llm: Optional[LLMProvider],
         cache: CacheProvider,
         evaluator: QualityEvaluator,
         *,
+        model_router: Optional[ModelRouter] = None,
         critic: Optional[CriticLLM] = None,
         enable_parallel: bool = True,
         enable_adaptive: bool = True,
@@ -63,7 +66,16 @@ class OptimizedRecursiveEngine:
         max_cache_size: int = 10000,
         convergence_strategy: Optional[ConvergenceStrategy] = None,
     ):
-        self.llm = llm
+        if model_router and llm is None:
+            llm = model_router.provider_for_role("assistant")
+            if critic is None:
+                try:
+                    critic = CriticLLM(model_router.provider_for_role("critic"))
+                except Exception:  # pragma: no cover - optional critic
+                    critic = None
+
+        self.model_router = model_router
+        self.llm = llm  # type: ignore[assignment]
         self.cache = cache
         self.evaluator = evaluator
         self.critic = critic
@@ -362,8 +374,6 @@ def create_optimized_engine(config: CoRTConfig) -> OptimizedRecursiveEngine:
     """Build an :class:`OptimizedRecursiveEngine` from configuration."""
 
     selector: Optional[ModelSelector] = None
-    default_model = config.model
-
     if config.model_policy:
         metadata = fetch_models()
         selector = ModelSelector(metadata, config.model_policy)
@@ -371,13 +381,13 @@ def create_optimized_engine(config: CoRTConfig) -> OptimizedRecursiveEngine:
 
     if config.provider.lower() == "openai":
         llm = OpenAILLMProvider(
-            api_key=config.api_key or os.getenv("OPENAI_API_KEY"),
+            api_key=config.api_key or credential_manager.get("OPENAI_API_KEY"),
             model=default_model,
             max_retries=config.max_retries,
         )
     else:
         llm = OpenRouterLLMProvider(
-            api_key=config.api_key or os.getenv("OPENROUTER_API_KEY"),
+            api_key=config.api_key or credential_manager.get("OPENROUTER_API_KEY"),
             model=default_model,
             max_retries=config.max_retries,
         )
@@ -387,20 +397,20 @@ def create_optimized_engine(config: CoRTConfig) -> OptimizedRecursiveEngine:
         critic_model = selector.model_for_role("critic")
         if config.provider.lower() == "openai":
             critic_provider = OpenAILLMProvider(
-                api_key=config.api_key or os.getenv("OPENAI_API_KEY"),
+                api_key=config.api_key or credential_manager.get("OPENAI_API_KEY"),
                 model=critic_model,
                 max_retries=config.max_retries,
             )
         else:
             critic_provider = OpenRouterLLMProvider(
-                api_key=config.api_key or os.getenv("OPENROUTER_API_KEY"),
+                api_key=config.api_key or credential_manager.get("OPENROUTER_API_KEY"),
                 model=critic_model,
                 max_retries=config.max_retries,
             )
         critic = CriticLLM(critic_provider)
 
-    cache = InMemoryLRUCache(max_size=config.cache_size)
 
+    cache = InMemoryLRUCache(max_size=config.cache_size)
     evaluator = EnhancedQualityEvaluator(thresholds=config.quality_thresholds)
     convergence = ConvergenceStrategy(
         evaluator.score,
@@ -410,10 +420,10 @@ def create_optimized_engine(config: CoRTConfig) -> OptimizedRecursiveEngine:
     )
 
     return OptimizedRecursiveEngine(
-        llm=llm,
+        llm=None,
         cache=cache,
         evaluator=evaluator,
-        critic=critic,
+        model_router=router,
         convergence_strategy=convergence,
         enable_parallel=config.enable_parallel_thinking,
     )

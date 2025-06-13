@@ -3,7 +3,11 @@ from __future__ import annotations
 from typing import Callable, Dict, List, Tuple
 from statistics import mean, pstdev
 import re
+
 import time
+
+from core.strategies.base import ConvergenceStrategy as BaseConvergenceStrategy
+
 
 
 class TrendConvergenceStrategy:
@@ -177,7 +181,7 @@ class QualityAssessor:
         return metrics
 
 
-class ConvergenceStrategy:
+class ConvergenceStrategy(BaseConvergenceStrategy):
     """Unified interface wrapping tracker and trend detection."""
 
     def __init__(

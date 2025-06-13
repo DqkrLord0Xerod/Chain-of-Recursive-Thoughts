@@ -9,7 +9,13 @@ from core.chat_v2 import ThinkingResult, ThinkingRound  # noqa: E402
 
 
 class DummyEngine:
-    async def think_and_respond(self, message, thinking_rounds=None, alternatives_per_round=3):
+    async def think_and_respond(
+        self,
+        message,
+        thinking_rounds=None,
+        alternatives_per_round=3,
+        session_id=None,
+    ):
         return ThinkingResult(
             response="ok",
             thinking_rounds=1,
@@ -103,3 +109,42 @@ def test_provider_health_endpoint(monkeypatch):
     assert resp.status_code == 200
     data = resp.json()
     assert data["providers"][0]["provider"] == "p1"
+
+
+def test_batch_chat_endpoint(monkeypatch):
+    client = TestClient(recthink_web_v2.app)
+
+    class DummyBatchOpt:
+        async def think_batch(self, prompts):
+            return [(p + "-ok", {}) for p in prompts]
+
+    class EngineWithParallel:
+        def __init__(self):
+            self.parallel_optimizer = object()
+
+    monkeypatch.setattr(
+        recthink_web_v2,
+        "BatchThinkingOptimizer",
+        lambda opt: DummyBatchOpt(),
+    )
+    monkeypatch.setattr(
+        recthink_web_v2,
+        "create_optimized_engine",
+        lambda config: EngineWithParallel(),
+    )
+
+    class DummyAnalyzer:
+        def record_batch(self, size, duration):
+            self.last = (size, duration)
+
+    analyzer = DummyAnalyzer()
+    monkeypatch.setattr(recthink_web_v2, "metrics_analyzer", analyzer)
+
+    resp = client.post(
+        "/chat/batch",
+        json={"session_id": "s5", "messages": ["x", "y"]},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["responses"] == ["x-ok", "y-ok"]
+    assert analyzer.last[0] == 2

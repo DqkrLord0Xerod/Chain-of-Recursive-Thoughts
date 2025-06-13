@@ -4,9 +4,9 @@ from typing import List
 
 import structlog
 
-from core.interfaces import LLMProvider, QualityEvaluator
+from core.interfaces import LLMProvider
 
-from .base import ThinkingStrategy
+from .base import ThinkingStrategy, QualityEvaluator
 
 logger = structlog.get_logger(__name__)
 
@@ -35,7 +35,7 @@ class AdaptiveThinkingStrategy(ThinkingStrategy):
         )
         self.improvement_threshold = improvement_threshold
 
-    async def determine_rounds(self, prompt: str) -> int:
+    async def determine_rounds(self, prompt: str, *, request_id: str) -> int:
         """Use the LLM to determine optimal number of rounds."""
         meta_prompt = (
             f"Analyze this prompt and determine the optimal number of thinking rounds"
@@ -45,15 +45,21 @@ class AdaptiveThinkingStrategy(ThinkingStrategy):
             f"Respond with just a number between {self.min_rounds} "
             f"and {self.max_rounds}."
         )
-        response = await self.llm.chat([
-            {"role": "user", "content": meta_prompt}
-        ], temperature=0.3)
+        response = await self.llm.chat(
+            [{"role": "user", "content": meta_prompt}],
+            temperature=0.3,
+            metadata={"request_id": request_id},
+        )
 
         try:
             rounds = int("".join(filter(str.isdigit, response.content)))
             return max(self.min_rounds, min(rounds, self.max_rounds))
         except (ValueError, TypeError):
-            logger.warning("Failed to parse thinking rounds", response=response.content)
+            logger.warning(
+                "Failed to parse thinking rounds",
+                response=response.content,
+                request_id=request_id,
+            )
             return 3
 
     async def should_continue(
@@ -61,6 +67,8 @@ class AdaptiveThinkingStrategy(ThinkingStrategy):
         rounds_completed: int,
         quality_scores: List[float],
         responses: List[str],
+        *,
+        request_id: str,
     ) -> tuple[bool, str]:
         """Determine if thinking should continue."""
         if rounds_completed >= self.max_rounds:
