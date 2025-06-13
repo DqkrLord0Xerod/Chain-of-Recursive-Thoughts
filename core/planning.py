@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from core.interfaces import LLMProvider
+from monitoring.telemetry import generate_request_id
 
 
 @dataclass
@@ -25,5 +26,9 @@ class ImprovementPlanner:
                 "content": f"Prompt: {prompt}\nResponse: {current_response}",
             },
         ]
-        result = await self.llm.chat(messages, temperature=0.2)
+        result = await self.llm.chat(
+            messages,
+            temperature=0.2,
+            metadata={"request_id": generate_request_id()},
+        )
         return result.content.strip()

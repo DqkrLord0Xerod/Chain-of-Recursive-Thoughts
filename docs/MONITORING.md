@@ -12,3 +12,19 @@ Grafana can be used to visualize these metrics with the provided dashboard.
 
 The dashboard displays request latency, convergence details and other
 metrics from `metrics_v2.py`.
+
+## Tracing Requests
+
+Every call to the thinking engine is tagged with a short `request_id`.
+This ID appears in all logs produced by the controller, providers and
+strategies. To trace a request across components, search your logs for the
+generated ID:
+
+```json
+{"event": "loop_start", "request_id": "a1b2c3d4", "prompt": "..."}
+...
+{"event": "llm_request_success", "request_id": "a1b2c3d4"}
+```
+
+Use this identifier to correlate metrics and log messages for a single
+session or API call.

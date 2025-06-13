@@ -23,6 +23,7 @@ from tenacity import (
 from api import openrouter
 from config import settings
 from exceptions import APIError, RateLimitError, TokenLimitError
+from monitoring.telemetry import generate_request_id
 
 
 logger = structlog.get_logger(__name__)
@@ -127,7 +128,7 @@ class OpenRouterLLMProvider:
     ) -> StandardLLMResponse:
         """Send chat request with comprehensive error handling."""
         
-        request_id = self._request_id(messages)
+        request_id = metadata.get("request_id") if metadata else generate_request_id()
         logger.info(
             "llm_request_start",
             request_id=request_id,
@@ -249,7 +250,7 @@ class OpenAILLMProvider:
         max_tokens: Optional[int] = None,
         metadata: Optional[Dict] = None,
     ) -> StandardLLMResponse:
-        request_id = self._request_id(messages)
+        request_id = metadata.get("request_id") if metadata else generate_request_id()
         logger.info(
             "llm_request_start",
             request_id=request_id,
@@ -370,6 +371,7 @@ class MultiProviderLLM:
         
         errors = []
         start_idx = self._select_provider()
+        request_id = metadata.get("request_id") if metadata else generate_request_id()
         
         for i in range(len(self.providers)):
             provider_idx = (start_idx + i) % len(self.providers)
@@ -397,6 +399,7 @@ class MultiProviderLLM:
                     provider_index=provider_idx,
                     latency=latency,
                     attempt=i + 1,
+                    request_id=request_id,
                 )
                 
                 return response
@@ -408,6 +411,7 @@ class MultiProviderLLM:
                     provider_index=provider_idx,
                     error=str(e),
                     attempt=i + 1,
+                    request_id=request_id,
                 )
                 
                 # Special handling for rate limits
@@ -416,6 +420,11 @@ class MultiProviderLLM:
                     
         # All providers failed
         error_summary = "; ".join(f"Provider {i}: {e}" for i, e in errors)
+        logger.error(
+            "multi_provider_failed",
+            request_id=request_id,
+            errors=errors,
+        )
         raise APIError(f"All providers failed: {error_summary}")
     
     def _select_provider(self) -> int:
