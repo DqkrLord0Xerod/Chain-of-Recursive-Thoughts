@@ -47,8 +47,12 @@ def generate_request_id() -> str:
 def configure_logging(level: str = "INFO", fmt: str = "json") -> None:
     """Configure structlog for JSON or console output."""
     processors = [
+        structlog.contextvars.merge_contextvars,
         structlog.processors.add_log_level,
         structlog.processors.TimeStamper(fmt="iso"),
+        structlog.processors.CallsiteParameterAdder(
+            [structlog.processors.CallsiteParameter.MODULE]
+        ),
     ]
     if fmt == "json":
         processors.append(structlog.processors.JSONRenderer())
@@ -56,7 +60,13 @@ def configure_logging(level: str = "INFO", fmt: str = "json") -> None:
         processors.append(structlog.dev.ConsoleRenderer())
 
     logging.basicConfig(level=getattr(logging, level.upper(), logging.INFO))
-    structlog.configure(processors=processors)
+    structlog.configure(
+        processors=processors,
+        wrapper_class=structlog.make_filtering_bound_logger(
+            logging.getLevelName(level.upper())
+        ),
+        logger_factory=structlog.PrintLoggerFactory(),
+    )
 
 
 def audit_log(event: str, **kwargs: Any) -> None:
