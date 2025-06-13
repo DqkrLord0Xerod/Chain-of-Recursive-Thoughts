@@ -21,7 +21,8 @@ from core.providers.cache import HybridCacheProvider, InMemoryLRUCache, DiskCach
 from core.providers.resilient_llm import ResilientLLMProvider
 from core.providers.embeddings import EmbeddingProvider
 from core.providers.quality import EnhancedQualityEvaluator
-from core.chat_v2 import RecursiveThinkingEngine, AdaptiveThinkingStrategy
+from core.chat_v2 import RecursiveThinkingEngine
+from core.strategies import StrategyFactory
 from core.context_manager import ContextManager
 from core.security.api_security import (
     APIKeyManager,
@@ -209,8 +210,9 @@ async def create_thinking_engine() -> RecursiveThinkingEngine:
     )
 
     # Create thinking strategy
-    strategy = AdaptiveThinkingStrategy(
-        resilient_llm,
+    factory = StrategyFactory(resilient_llm, evaluator)
+    strategy = factory.create(
+        config.thinking_strategy,
         max_rounds=config.performance.max_thinking_rounds,
         quality_threshold=config.performance.quality_threshold,
     )

@@ -16,8 +16,10 @@ from core.recursive_engine_v2 import (
     OptimizedRecursiveEngine,
     create_optimized_engine,
 )
+from core.loop_controller import LoopController
+from core.optimization.parallel_thinking import BatchThinkingOptimizer
 from monitoring.metrics_v2 import MetricsAnalyzer, ThinkingMetrics
-from monitoring.telemetry import initialize_telemetry
+from monitoring.telemetry import initialize_telemetry, instrument_fastapi
 from config.config import load_production_config
 
 app = FastAPI(title="RecThink API v2")
@@ -54,11 +56,19 @@ async def init_telemetry() -> None:
         prometheus_port=cfg.monitoring.prometheus_port,
         jaeger_endpoint=cfg.monitoring.jaeger_endpoint,
     )
+    instrument_fastapi(app)
 
 
 class ChatRequest(BaseModel):
     session_id: str
     message: str
+    thinking_rounds: Optional[int] = None
+    alternatives_per_round: int = 3
+
+
+class BatchChatRequest(BaseModel):
+    session_id: str
+    messages: List[str]
     thinking_rounds: Optional[int] = None
     alternatives_per_round: int = 3
 
@@ -75,6 +85,7 @@ async def chat_endpoint(request: ChatRequest):
             request.message,
             thinking_rounds=request.thinking_rounds,
             alternatives_per_round=request.alternatives_per_round,
+            session_id=request.session_id,
         )
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
@@ -99,6 +110,33 @@ async def chat_endpoint(request: ChatRequest):
         "response": result.response,
         "thinking_rounds": result.thinking_rounds,
         "thinking_history": history,
+    }
+
+
+@app.post("/chat/batch")
+async def chat_batch_endpoint(request: BatchChatRequest):
+    if request.session_id not in chat_sessions:
+        chat_sessions[request.session_id] = create_optimized_engine(CoRTConfig())
+
+    engine = chat_sessions[request.session_id]
+    if not engine.parallel_optimizer:
+        raise HTTPException(status_code=400, detail="Parallel thinking disabled")
+
+    batch_opt = BatchThinkingOptimizer(engine.parallel_optimizer)
+
+    start = time.time()
+    try:
+        results = await batch_opt.think_batch(request.messages)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    end = time.time()
+
+    metrics_analyzer.record_batch(len(request.messages), end - start)
+
+    responses = [r[0] for r in results]
+    return {
+        "session_id": request.session_id,
+        "responses": responses,
     }
 
 
@@ -128,6 +166,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                     message,
                     thinking_rounds=rounds,
                     alternatives_per_round=alts,
+                    session_id=session_id,
                 )
             except Exception as exc:
                 await websocket.send_json({"error": str(exc)})
@@ -153,6 +192,31 @@ async def provider_health() -> Dict[str, List[Dict[str, object]]]:
     health = metrics_analyzer.get_provider_health()
     logger.info("provider_health_status", providers=health)
     return {"providers": health}
+
+
+@app.get("/health")
+async def health() -> Dict[str, str]:
+    """Basic health check for service availability."""
+    return {"status": "ok"}
+
+
+@app.get("/sessions/{session_id}/history")
+async def session_history(session_id: str) -> Dict[str, object]:
+    """Return persisted loop history for a session."""
+    controller = LoopController(None)
+    history = await controller.load_loop_history(session_id)
+    return {
+        "session_id": session_id,
+        "history": [asdict(h) for h in history],
+    }
+
+
+@app.get("/sessions/{session_id}/convergence")
+async def session_convergence(session_id: str) -> Dict[str, object]:
+    """Return convergence reasons for a session."""
+    controller = LoopController(None)
+    reasons = await controller.get_convergence_reasons(session_id)
+    return {"session_id": session_id, "reasons": reasons}
 
 
 @app.websocket("/ws/stream/{session_id}")
@@ -199,9 +263,14 @@ async def websocket_stream(websocket: WebSocket, session_id: str):
 @app.get("/metrics/summary")
 async def metrics_summary() -> Dict[str, object]:
     """Return summary statistics and recent anomalies."""
+    latency = {}
+    if hasattr(metrics_analyzer, "stage_latency"):
+        latency = {stage: list(v) for stage, v in metrics_analyzer.stage_latency.items()}
+
     return {
         "summary": metrics_analyzer.get_summary_stats(),
         "anomalies": list(metrics_analyzer.anomalies),
+        "stage_latency": latency,
     }
 
 

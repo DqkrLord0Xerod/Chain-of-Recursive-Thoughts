@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     embed_url: str = "https://openrouter.ai/api/v1/embeddings"
     frontend_url: str = "http://localhost:3000"
     ws_base_url: str = "ws://localhost:8000"
+    thinking_strategy: str = Field("adaptive", env="THINKING_STRATEGY")
 
     class Config:
         env_file = ".env"
@@ -145,6 +146,8 @@ class CacheSettings(BaseSettings):
     semantic_cache_enabled: bool = True
     semantic_cache_threshold: float = 0.95
     semantic_cache_max_entries: int = 10000
+    semantic_cache_ttl: int = 3600
+    semantic_cache_min_hits: int = 0
 
     class Config:
         case_sensitive = False
@@ -192,6 +195,17 @@ class MonitoringSettings(BaseSettings):
         if v.upper() not in valid:
             raise ValueError(f"Log level must be one of {valid}")
         return v.upper()
+
+    class Config:
+        case_sensitive = False
+
+
+class RetentionSettings(BaseSettings):
+    """Data retention policies."""
+
+    log_retention_days: int = Field(30, env="LOG_RETENTION_DAYS")
+    audit_log_retention_days: int = Field(90, env="AUDIT_LOG_RETENTION_DAYS")
+    metrics_retention_days: int = Field(180, env="METRICS_RETENTION_DAYS")
 
     class Config:
         case_sensitive = False
@@ -255,6 +269,7 @@ class ProductionSettings(BaseSettings):
     memory: MemorySettings = Field(default_factory=MemorySettings)
     monitoring: MonitoringSettings = Field(default_factory=MonitoringSettings)
     performance: PerformanceSettings = Field(default_factory=PerformanceSettings)
+    retention: RetentionSettings = Field(default_factory=RetentionSettings)
 
     @field_validator("environment")
     @classmethod
@@ -294,6 +309,11 @@ def load_production_config() -> ProductionSettings:
                 "session_secret_key": os.getenv("SESSION_SECRET_KEY"),
             },
             "database": {"postgres_url": os.getenv("DATABASE_URL")},
+            "retention": {
+                "log_retention_days": os.getenv("LOG_RETENTION_DAYS"),
+                "audit_log_retention_days": os.getenv("AUDIT_LOG_RETENTION_DAYS"),
+                "metrics_retention_days": os.getenv("METRICS_RETENTION_DAYS"),
+            },
         }
         config = ProductionSettings.model_validate(data)
         _validate_runtime_config(config)

@@ -18,6 +18,7 @@ class DummyEngine:
         message,
         thinking_rounds=None,
         alternatives_per_round=3,
+        session_id=None,
     ):
         self.captured["rounds"] = thinking_rounds
         self.captured["alts"] = alternatives_per_round
@@ -37,7 +38,7 @@ def test_send_message_custom_rounds(monkeypatch):
     monkeypatch.setattr(
         recthink_web_v2,
         "create_optimized_engine",
-        lambda config: engine,
+        lambda config, router=None, budget_manager=None: engine,
     )
 
     client = TestClient(recthink_web_v2.app)
@@ -62,7 +63,7 @@ def test_send_message_defaults(monkeypatch):
     monkeypatch.setattr(
         recthink_web_v2,
         "create_optimized_engine",
-        lambda config: engine,
+        lambda config, router=None, budget_manager=None: engine,
     )
 
     client = TestClient(recthink_web_v2.app)

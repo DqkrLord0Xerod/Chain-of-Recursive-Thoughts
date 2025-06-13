@@ -6,6 +6,11 @@ from collections import defaultdict, deque
 from typing import Dict, List, Optional, Tuple, Callable
 from dataclasses import dataclass
 
+import structlog
+
+
+logger = structlog.get_logger(__name__)
+
 from api import fetch_models
 
 logger = logging.getLogger(__name__)
@@ -48,7 +53,20 @@ class BudgetManager:
         """Return True if adding ``next_tokens`` would exceed the limit."""
         return self.tokens_used + next_tokens >= self.token_limit
 
-    def record_usage(self, tokens: int) -> None:
+    def enforce_limit(self, next_tokens: int) -> None:
+        """Raise ``TokenLimitError`` if the token budget would be exceeded."""
+        from exceptions import TokenLimitError
+
+        if self.will_exceed_budget(next_tokens):
+            logger.warning(
+                "token_limit_exceeded",
+                used=self.tokens_used,
+                attempted=next_tokens,
+                limit=self.token_limit,
+            )
+            raise TokenLimitError("Token budget exceeded")
+
+    def record_llm_usage(self, tokens: int) -> None:
         """Record ``tokens`` consumed and update cost statistics."""
         self.tokens_used += tokens
         self.dollars_spent += tokens * self._cost_per_token
@@ -320,3 +338,16 @@ class PredictiveBudgetManager(BudgetManager):
             return 0.2  # 20% savings potential
         else:
             return 0.1  # 10% savings potential
+
+    # Backwards compatibility
+    record_usage = record_llm_usage
+
+    @property
+    def cost_per_token(self) -> float:
+        """Return cost per token for the configured model."""
+        return self._cost_per_token
+
+    @property
+    def remaining_tokens(self) -> int:
+        """Return the number of tokens remaining in the budget."""
+        return max(self.token_limit - self.tokens_used, 0)

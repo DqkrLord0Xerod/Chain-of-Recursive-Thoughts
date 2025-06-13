@@ -33,11 +33,16 @@ class DummyEvaluator(QualityEvaluator):
 
 
 class TwoRoundStrategy(ThinkingStrategy):
-    async def determine_rounds(self, prompt: str) -> int:
+    async def determine_rounds(self, prompt: str, *, request_id: str) -> int:
         return 2
 
     async def should_continue(
-        self, rounds_completed: int, quality_scores: List[float], responses: List[str]
+        self,
+        rounds_completed: int,
+        quality_scores: List[float],
+        responses: List[str],
+        *,
+        request_id: str,
     ):
         return rounds_completed < 2, "continue"
 
@@ -46,7 +51,7 @@ def test_budget_manager_records_usage():
     catalog = [{"id": "dummy", "pricing": {"prompt": 0.002, "completion": 0.003}}]
     manager = BudgetManager("dummy", token_limit=100, catalog=catalog)
 
-    manager.record_usage(50)
+    manager.record_llm_usage(50)
     expected_cost = 50 * (0.002 + 0.003) / 1000
 
     assert manager.tokens_used == 50

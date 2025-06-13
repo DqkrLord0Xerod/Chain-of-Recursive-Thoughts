@@ -10,7 +10,7 @@ import os  # noqa: F401
 
 import structlog
 
-from .strategies import AdaptiveThinkingStrategy  # noqa: F401
+from core.strategies import ThinkingStrategy, strategy_from_config, load_strategy
 from core.interfaces import (
     CacheProvider,
     LLMProvider,
@@ -18,7 +18,6 @@ from core.interfaces import (
 )
 from core.context_manager import ContextManager
 from core.recursion import ConvergenceStrategy
-from core.strategies import ThinkingStrategy, load_strategy  # noqa: F401
 from monitoring.metrics import MetricsRecorder
 from core.providers import (  # noqa: F401
     OpenRouterLLMProvider,
@@ -29,6 +28,7 @@ from core.providers import (  # noqa: F401
 )
 from core.planning import ImprovementPlanner
 from core.model_policy import ModelSelector
+from core.model_router import ModelRouter
 from core.budget import BudgetManager
 from core.cache_manager import CacheManager
 from core.metrics_manager import MetricsManager
@@ -37,6 +37,7 @@ from core.tools import ToolRegistry, SearchTool, PythonExecutionTool  # noqa: F4
 from core.memory import FaissMemoryStore
 from api import fetch_models  # noqa: F401
 from config import settings
+from core.security import OutputFilter
 import tiktoken  # noqa: F401
 
 
@@ -85,7 +86,9 @@ class CoRTConfig:
     budget_token_limit: int = 100000
     enable_parallel_thinking: bool = True
     enable_tools: bool = True
-    thinking_strategy: str = "adaptive"
+    thinking_strategy: str = field(
+        default_factory=lambda: settings.thinking_strategy
+    )
     quality_thresholds: Optional[Dict[str, float]] = None
     advanced_convergence: bool = False
     memory_dim: int = 1536
@@ -104,6 +107,7 @@ class RecursiveThinkingEngine:
         thinking_strategy: ThinkingStrategy,
         convergence_strategy: Optional[ConvergenceStrategy] = None,
         model_selector: Optional[ModelSelector] = None,
+        model_router: Optional[ModelRouter] = None,
         *,
         cache_manager: Optional[CacheManager] = None,
         metrics_manager: Optional[MetricsManager] = None,
@@ -113,6 +117,7 @@ class RecursiveThinkingEngine:
         tools: Optional[ToolRegistry] = None,
         planner: Optional["ImprovementPlanner"] = None,
         memory_store: Optional["FaissMemoryStore"] = None,
+        output_filter: Optional["OutputFilter"] = None,
     ) -> None:
         self.llm = llm
         self.cache = cache
@@ -122,9 +127,11 @@ class RecursiveThinkingEngine:
         self.convergence_strategy = convergence_strategy or ConvergenceStrategy(
             evaluator.score,
             evaluator.score,
+            max_iterations=5,
             advanced=False,  # Will be passed explicitly in create_default_engine
         )
         self.model_selector = model_selector
+        self.model_router = model_router
         self.budget_manager = budget_manager
         self.cache_manager = cache_manager or CacheManager(
             llm,
@@ -142,6 +149,11 @@ class RecursiveThinkingEngine:
         self.planner = planner
         self.memory_store = memory_store
 
+        from core.loop_controller import LoopController
+
+        self.loop_controller = LoopController(self)
+        self.output_filter = output_filter
+
         if hasattr(self.thinking_strategy, "set_tools"):
             self.thinking_strategy.set_tools(self.tools)
 
@@ -149,9 +161,80 @@ class RecursiveThinkingEngine:
         """Execute a registered tool."""
         return await self.tools.run(name, task)
 
+    async def think_and_respond(
+        self,
+        prompt: str,
+        *,
+        thinking_rounds: Optional[int] = None,
+        alternatives_per_round: int = 3,
+        temperature: float = 0.7,
+        session_id: Optional[str] = None,
+        metadata: Optional[Dict[str, object]] = None,
+    ) -> ThinkingResult:
+        """Execute the recursive loop via :class:`LoopController`."""
+        result = await self.loop_controller.respond(
+            prompt,
+            thinking_rounds=thinking_rounds,
+            alternatives_per_round=alternatives_per_round,
+            temperature=temperature,
+            session_id=session_id,
+            metadata=metadata,
+        )
+        if self.output_filter:
+            result.response = self.output_filter.filter(result.response)
+        return result
 
-def create_default_engine(config: CoRTConfig) -> RecursiveThinkingEngine:
-    """Compatibility wrapper for existing tests."""
-    from .recursive_engine_v2 import create_optimized_engine
 
-    return create_optimized_engine(config)
+def create_default_engine(
+    config: CoRTConfig,
+    *,
+    router: Optional[ModelRouter] = None,
+    budget_manager: Optional[BudgetManager] = None,
+    output_filter: Optional[OutputFilter] = None,
+) -> RecursiveThinkingEngine:
+    """Build a :class:`RecursiveThinkingEngine` from configuration."""
+
+    if config.provider.lower() == "openai":
+        llm = OpenAILLMProvider(
+            api_key=config.api_key or os.getenv("OPENAI_API_KEY"),
+            model=config.model,
+            max_retries=config.max_retries,
+        )
+    else:
+        llm = OpenRouterLLMProvider(
+            api_key=config.api_key or os.getenv("OPENROUTER_API_KEY"),
+            model=config.model,
+            max_retries=config.max_retries,
+        )
+
+    cache = InMemoryLRUCache(max_size=config.cache_size)
+    evaluator = EnhancedQualityEvaluator(thresholds=config.quality_thresholds)
+
+    tokenizer = tiktoken.get_encoding("cl100k_base")
+    ctx_mgr = ContextManager(config.max_context_tokens, tokenizer)
+
+    strategy = strategy_from_config(config, llm, evaluator)
+    strategy = load_strategy(config.thinking_strategy, llm, evaluator)
+    convergence = ConvergenceStrategy(
+        evaluator.score,
+        evaluator.score,
+        advanced=config.advanced_convergence,
+    )
+
+    tools = ToolRegistry()
+    if config.enable_tools:
+        tools.register(SearchTool())
+        tools.register(PythonExecutionTool())
+
+    return RecursiveThinkingEngine(
+        llm=llm,
+        cache=cache,
+        evaluator=evaluator,
+        context_manager=ctx_mgr,
+        thinking_strategy=strategy,
+        convergence_strategy=convergence,
+        tools=tools,
+        model_router=router,
+        budget_manager=budget_manager,
+        output_filter=output_filter,
+    )

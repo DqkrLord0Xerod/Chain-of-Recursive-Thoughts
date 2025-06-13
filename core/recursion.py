@@ -4,6 +4,10 @@ from typing import Callable, Dict, List, Tuple
 from statistics import mean, pstdev
 import re
 
+import time
+
+from core.strategies.base import ConvergenceStrategy as BaseConvergenceStrategy
+
 
 class TrendConvergenceStrategy:
     """Strategy for detecting convergence using rolling trends."""
@@ -176,7 +180,7 @@ class QualityAssessor:
         return metrics
 
 
-class ConvergenceStrategy:
+class ConvergenceStrategy(BaseConvergenceStrategy):
     """Unified interface wrapping tracker and trend detection."""
 
     def __init__(
@@ -184,11 +188,13 @@ class ConvergenceStrategy:
         similarity_fn: Callable[[str, str], float],
         score_fn: Callable[[str, str], float],
         *,
+        max_iterations: int,
         similarity_threshold: float = 0.95,
         improvement_threshold: float = 0.01,
         oscillation_threshold: float = 0.95,
         window: int = 3,
         history_size: int = 5,
+        time_limit: float | None = None,
         advanced: bool = False,
     ) -> None:
         strategy_cls = StatisticalConvergenceStrategy if advanced else TrendConvergenceStrategy
@@ -203,18 +209,43 @@ class ConvergenceStrategy:
             ),
             history_size=history_size,
         )
+        self.max_iterations = max_iterations
+        self.time_limit = time_limit
+        self.iterations = 0
+        self.start_time: float | None = None
+        self.advanced = advanced
 
     def add(self, response: str, prompt: str) -> None:
         """Add response to the history."""
+        if self.start_time is None:
+            self.start_time = time.time()
+        self.iterations += 1
         self._tracker.add(response, prompt)
 
     def update(self, response: str, prompt: str) -> Tuple[bool, str]:
         """Add and immediately check for convergence."""
-        return self._tracker.update(response, prompt)
+        self.add(response, prompt)
+        return self.should_continue(prompt)
 
     def should_continue(self, prompt: str) -> Tuple[bool, str]:
         """Evaluate whether processing should continue."""
-        return self._tracker.should_continue(prompt)
+        if self.iterations >= self.max_iterations:
+            if self._tracker.reason_history:
+                self._tracker.reason_history[-1] = "max iterations"
+            else:
+                self._tracker.reason_history.append("max iterations")
+            return False, "max iterations"
+        if self.time_limit is not None and self.start_time is not None:
+            if time.time() - self.start_time >= self.time_limit:
+                if self._tracker.reason_history:
+                    self._tracker.reason_history[-1] = "time limit"
+                else:
+                    self._tracker.reason_history.append("time limit")
+                return False, "time limit"
+        cont, reason = self._tracker.should_continue(prompt)
+        if not cont:
+            return cont, reason
+        return True, reason
 
     @property
     def rolling_average(self) -> float:

@@ -287,6 +287,7 @@ class EnhancedMetricsManager(MetricsManager):
         cost: Optional[float] = None,
         quality_score: Optional[float] = None,
         model_used: Optional[str] = None,
+        quality_scores: Optional[list[float]] = None,
     ) -> None:
         """Enhanced recording with cost and quality metrics."""
         

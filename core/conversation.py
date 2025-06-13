@@ -60,7 +60,7 @@ class ConversationManager:
         ]
         response = await self.llm.chat(messages, temperature=0.5)
         if self.budget_manager:
-            self.budget_manager.record_usage(
-                response.usage.get("total_tokens", 0)
-            )
+            tokens = response.usage.get("total_tokens", 0)
+            self.budget_manager.enforce_limit(tokens)
+            self.budget_manager.record_llm_usage(tokens)
         return response.content

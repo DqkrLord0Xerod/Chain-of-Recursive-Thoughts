@@ -9,10 +9,15 @@ from types import SimpleNamespace  # noqa: E402
 
 import pytest  # noqa: E402
 
-from core.optimization.parallel_thinking import ParallelThinkingOptimizer  # noqa: E402
+from core.optimization.parallel_thinking import (  # noqa: E402
+    ParallelThinkingOptimizer,
+    BatchThinkingOptimizer,
+)
 from core.interfaces import LLMProvider, QualityEvaluator  # noqa: E402
 from core.chat_v2 import CoRTConfig  # noqa: E402
 from core.recursive_engine_v2 import create_optimized_engine  # noqa: E402
+from core.model_router import ModelRouter  # noqa: E402
+from core.budget import BudgetManager  # noqa: E402
 
 
 class DummyLLM(LLMProvider):
@@ -57,17 +62,23 @@ async def test_parallel_generation():
 
 def test_engine_parallel_flag():
     cfg = CoRTConfig(enable_parallel_thinking=False)
-    engine = create_optimized_engine(cfg)
+    router = ModelRouter.from_config(cfg)
+    budget = BudgetManager(cfg.model, token_limit=cfg.budget_token_limit, catalog=[{"id": cfg.model, "pricing": {}}])
+    engine = create_optimized_engine(cfg, router=router, budget_manager=budget)
     assert engine.parallel_optimizer is None
 
     cfg = CoRTConfig(enable_parallel_thinking=True)
-    engine = create_optimized_engine(cfg)
+    router = ModelRouter.from_config(cfg)
+    budget = BudgetManager(cfg.model, token_limit=cfg.budget_token_limit, catalog=[{"id": cfg.model, "pricing": {}}])
+    engine = create_optimized_engine(cfg, router=router, budget_manager=budget)
     assert engine.parallel_optimizer is not None
 
 
 def test_threshold_propagation_parallel_engine():
     cfg = CoRTConfig(enable_parallel_thinking=True, quality_thresholds={"overall": 0.75})
-    engine = create_optimized_engine(cfg)
+    router = ModelRouter.from_config(cfg)
+    budget = BudgetManager(cfg.model, token_limit=cfg.budget_token_limit, catalog=[{"id": cfg.model, "pricing": {}}])
+    engine = create_optimized_engine(cfg, router=router, budget_manager=budget)
     assert engine.evaluator.thresholds["overall"] == 0.75
     assert engine.parallel_optimizer.quality_threshold == 0.75
 
@@ -111,3 +122,23 @@ async def test_critic_changes_selection():
     )
 
     assert best == "a2"
+
+
+@pytest.mark.asyncio
+async def test_batch_optimizer_multiple_prompts():
+    llm = DummyLLM()
+    opt = ParallelThinkingOptimizer(
+        llm,
+        DummyEval(),
+        max_parallel=3,
+        timeout_per_round=1.0,
+    )
+    batch = BatchThinkingOptimizer(opt, batch_size=3, batch_timeout=0.01)
+
+    start = time.perf_counter()
+    results = await batch.think_batch(["p1", "p2", "p3"])
+    duration = time.perf_counter() - start
+
+    assert len(results) == 3
+    assert all(r[0] == "alt" for r in results)
+    assert duration < 0.5

@@ -6,11 +6,15 @@ import asyncio
 import functools
 from contextlib import asynccontextmanager, contextmanager
 from typing import Any, Callable, Dict, Optional, TypeVar
+import uuid
+import logging
 
 from opentelemetry import trace, metrics
 from opentelemetry.exporter.prometheus import PrometheusMetricReader
 from opentelemetry.instrumentation.aiohttp_client import AioHttpClientInstrumentor
 from opentelemetry.instrumentation.requests import RequestsInstrumentor
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+from fastapi import FastAPI
 from opentelemetry.metrics import Histogram, Counter, UpDownCounter
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.resources import Resource
@@ -25,6 +29,7 @@ from prometheus_client import start_http_server
 import structlog
 
 logger = structlog.get_logger(__name__)
+audit_logger = structlog.get_logger("audit")
 
 T = TypeVar('T')
 
@@ -32,6 +37,31 @@ T = TypeVar('T')
 _tracer: Optional[trace.Tracer] = None
 _meter: Optional[metrics.Meter] = None
 _metrics: Optional['CoRTMetrics'] = None
+
+
+def generate_request_id() -> str:
+    """Generate a short request/session identifier."""
+    return uuid.uuid4().hex[:8]
+
+
+def configure_logging(level: str = "INFO", fmt: str = "json") -> None:
+    """Configure structlog for JSON or console output."""
+    processors = [
+        structlog.processors.add_log_level,
+        structlog.processors.TimeStamper(fmt="iso"),
+    ]
+    if fmt == "json":
+        processors.append(structlog.processors.JSONRenderer())
+    else:
+        processors.append(structlog.dev.ConsoleRenderer())
+
+    logging.basicConfig(level=getattr(logging, level.upper(), logging.INFO))
+    structlog.configure(processors=processors)
+
+
+def audit_log(event: str, **kwargs: Any) -> None:
+    """Record an audit log event."""
+    audit_logger.info(event, **kwargs)
 
 
 class CoRTMetrics:
@@ -158,6 +188,8 @@ def initialize_telemetry(
     enable_prometheus: bool = True,
     prometheus_port: int = 8080,
     jaeger_endpoint: Optional[str] = None,
+    log_level: str = "INFO",
+    log_format: str = "json",
 ) -> None:
     """
     Initialize OpenTelemetry with configured exporters.
@@ -171,6 +203,8 @@ def initialize_telemetry(
         jaeger_endpoint: Jaeger collector endpoint
     """
     global _tracer, _meter, _metrics
+
+    configure_logging(log_level, log_format)
     
     # Create resource
     resource = Resource.create({
@@ -444,3 +478,12 @@ def record_provider_failure(provider: str, error_type: str) -> None:
     """Record a provider failure."""
     metrics = get_metrics()
     metrics.provider_failures.add(1, {"provider": provider, "error_type": error_type})
+
+
+def instrument_fastapi(app: "FastAPI", *, excluded_urls: str = "/docs,/openapi.json") -> None:
+    """Attach OpenTelemetry tracing middleware to a FastAPI app."""
+    FastAPIInstrumentor().instrument_app(
+        app,
+        tracer_provider=trace.get_tracer_provider(),
+        excluded_urls=excluded_urls,
+    )

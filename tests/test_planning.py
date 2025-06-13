@@ -38,7 +38,7 @@ class DummyEvaluator(QualityEvaluator):
 
 
 class DummyStrategy:
-    async def determine_rounds(self, prompt: str) -> int:
+    async def determine_rounds(self, prompt: str, *, request_id: str) -> int:
         return 1
 
     async def should_continue(self, rounds_completed: int, quality_scores: List[float], responses: List[str]):
@@ -66,7 +66,11 @@ async def test_engine_stores_plans():
     tokenizer = type("Tok", (), {"encode": lambda self, t: t.split()})()
     context_manager = ContextManager(100, tokenizer)
     strategy = DummyStrategy()
-    convergence = ConvergenceStrategy(lambda a, b: 0.0, lambda r, p: 0.0)
+    convergence = ConvergenceStrategy(
+        lambda a, b: 0.0,
+        lambda r, p: 0.0,
+        max_iterations=2,
+    )
     planner = ImprovementPlanner(llm)
     engine = RecursiveThinkingEngine(
         llm=llm,

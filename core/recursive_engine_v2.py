@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
-import time
 from typing import Dict, List, Optional, Tuple
 
 import structlog
@@ -18,10 +16,10 @@ from core.interfaces import (
 )
 from core.chat_v2 import CoRTConfig
 from core.model_policy import ModelSelector
+from core.model_router import ModelRouter
+from core.budget import BudgetManager
 from api import fetch_models
 from core.providers import (
-    OpenRouterLLMProvider,
-    OpenAILLMProvider,
     InMemoryLRUCache,
     EnhancedQualityEvaluator,
     CriticLLM,
@@ -30,12 +28,16 @@ from core.optimization.parallel_thinking import (
     ParallelThinkingOptimizer,
     AdaptiveThinkingOptimizer,
 )
-from core.prompt_evolution import evolve_prompt
 from core.recursion import ConvergenceStrategy
-from monitoring.telemetry import trace_method, record_thinking_metrics
+from core.loop_controller import LoopController
+from monitoring.telemetry import trace_method
+from core.security import CredentialManager
 
 
 logger = structlog.get_logger(__name__)
+
+
+credential_manager = CredentialManager()
 
 
 class OptimizedRecursiveEngine:
@@ -57,6 +59,8 @@ class OptimizedRecursiveEngine:
         cache: CacheProvider,
         evaluator: QualityEvaluator,
         *,
+        model_router: Optional[ModelRouter] = None,
+        budget_manager: Optional[BudgetManager] = None,
         critic: Optional[CriticLLM] = None,
         enable_parallel: bool = True,
         enable_adaptive: bool = True,
@@ -64,13 +68,17 @@ class OptimizedRecursiveEngine:
         max_cache_size: int = 10000,
         convergence_strategy: Optional[ConvergenceStrategy] = None,
     ):
-        self.llm = llm
+
+        self.model_router = model_router
+        self.budget_manager = budget_manager
+        self.llm = llm  # type: ignore[assignment]
         self.cache = cache
         self.evaluator = evaluator
         self.critic = critic
         self.convergence_strategy = convergence_strategy or ConvergenceStrategy(
             lambda a, b: evaluator.score(a, b),
             evaluator.score,
+            max_iterations=5,
         )
 
         # Optimizers
@@ -89,6 +97,9 @@ class OptimizedRecursiveEngine:
         self.enable_compression = enable_compression
         self.enable_adaptive = enable_adaptive
         self.prompt_history: List[str] = []
+
+        # Controller handling the main loop
+        self.loop_controller = LoopController(self)
 
         # Semantic cache for similar prompts
         self.semantic_cache: Dict[str, List[Tuple[str, str, float]]] = {}
@@ -114,105 +125,13 @@ class OptimizedRecursiveEngine:
         target_quality: float = 0.9,
         enable_streaming: bool = False,
     ) -> Dict:
-        """
-        Execute optimized recursive thinking.
-
-        Args:
-            prompt: User prompt
-            context: Conversation context
-            max_thinking_time: Maximum time for thinking
-            target_quality: Target quality score
-            enable_streaming: Stream intermediate results
-
-        Returns:
-            Dictionary with response and metadata
-        """
-        start_time = time.time()
-
-        # Check semantic cache first
-        cached_response = await self._check_semantic_cache(prompt)
-        if cached_response:
-            return {
-                "response": cached_response,
-                "cached": True,
-                "thinking_time": 0.0,
-                "metadata": {"cache_type": "semantic"},
-            }
-
-        # Compress prompt and evolve if enabled
-        if self.enable_compression:
-            evolved = evolve_prompt(prompt, self.prompt_history)
-            compressed_prompt = await self._compress_prompt(evolved, context)
-        else:
-            compressed_prompt = prompt
-
-        # Generate initial response
-        initial_response = await self._generate_initial(compressed_prompt, context)
-
-        # Check if initial is good enough
-        initial_quality = await self._score_response(initial_response.content, prompt)
-        if initial_quality >= target_quality:
-            await self._update_semantic_cache(prompt, initial_response.content, initial_quality)
-            self.prompt_history.append(prompt)
-            return {
-                "response": initial_response.content,
-                "cached": False,
-                "thinking_time": time.time() - start_time,
-                "thinking_rounds": 0,
-                "initial_quality": initial_quality,
-                "final_quality": initial_quality,
-                "metadata": {"early_stop": "initial_good_enough"},
-            }
-
-        # Determine prompt category for adaptive optimization
-        prompt_category = self._categorize_prompt(prompt)
-
-        # Run optimized thinking
-        if self.adaptive_optimizer and self.enable_adaptive:
-            best_response, candidates, metrics = await self.adaptive_optimizer.think_adaptive(
-                prompt,
-                initial_response.content,
-                prompt_category,
-            )
-        elif self.parallel_optimizer:
-            best_response, candidates, metrics = await self.parallel_optimizer.think_parallel(
-                prompt,
-                initial_response.content,
-            )
-        else:
-            # Fallback to simple sequential thinking
-            best_response = initial_response.content
-            candidates = []
-            metrics = {"rounds": 0}
-
-        # Record metrics
-        thinking_time = time.time() - start_time
-        final_quality = await self._score_response(best_response, prompt)
-
-        await self._update_semantic_cache(prompt, best_response, final_quality)
-
-        record_thinking_metrics(
-            rounds=metrics.get("rounds", 0),
-            duration=thinking_time,
-            convergence_reason=metrics.get("convergence_reason", "unknown"),
-            initial_quality=initial_quality,
-            final_quality=final_quality,
-            total_tokens=sum(c.tokens_used for c in candidates) if candidates else 0,
+        """Delegate to :class:`LoopController` for the main loop."""
+        return await self.loop_controller.run_loop(
+            prompt,
+            context=context,
+            max_thinking_time=max_thinking_time,
+            target_quality=target_quality,
         )
-
-        self.prompt_history.append(prompt)
-
-        return {
-            "response": best_response,
-            "cached": False,
-            "thinking_time": thinking_time,
-            "thinking_rounds": metrics.get("rounds", 0),
-            "initial_quality": initial_quality,
-            "final_quality": final_quality,
-            "improvement": final_quality - initial_quality,
-            "candidates_evaluated": len(candidates),
-            "metadata": metrics,
-        }
 
     @trace_method("think_stream")
     async def think_stream(
@@ -221,56 +140,9 @@ class OptimizedRecursiveEngine:
         *,
         context: Optional[List[Dict[str, str]]] = None,
     ):
-        """
-        Stream thinking progress and intermediate results.
-
-        Yields:
-            Dictionary updates with current best response and metadata
-        """
-        start_time = time.time()
-
-        # Initial response
-        initial_response = await self._generate_initial(prompt, context)
-        initial_quality = await self._score_response(initial_response.content, prompt)
-
-        yield {
-            "stage": "initial",
-            "response": initial_response.content,
-            "quality": initial_quality,
-            "elapsed": time.time() - start_time,
-        }
-
-        if initial_quality >= 0.9:
-            return
-
-        # Stream improvements
-        current_best = initial_response.content
-        current_quality = initial_quality
-
-        for round_num in range(3):
-            # Generate alternatives
-            messages = [{
-                "role": "user",
-                "content": f"Improve: {prompt}\nCurrent: {current_best}",
-            }]
-
-            alternative = await self.llm.chat(messages, temperature=0.7 - round_num * 0.2)
-            alt_quality = await self._score_response(alternative.content, prompt)
-
-            if alt_quality > current_quality:
-                current_best = alternative.content
-                current_quality = alt_quality
-
-                yield {
-                    "stage": f"round_{round_num + 1}",
-                    "response": current_best,
-                    "quality": current_quality,
-                    "improvement": current_quality - initial_quality,
-                    "elapsed": time.time() - start_time,
-                }
-
-            if current_quality >= 0.9:
-                break
+        """Stream progress using :class:`LoopController`."""
+        async for update in self.loop_controller.run_stream(prompt, context=context):
+            yield update
 
     @trace_method("generate_initial")
     async def _generate_initial(
@@ -494,53 +366,52 @@ Rules:
         return stats
 
 
-def create_optimized_engine(config: CoRTConfig) -> OptimizedRecursiveEngine:
+def create_optimized_engine(
+    config: CoRTConfig,
+    *,
+    router: Optional[ModelRouter] = None,
+    budget_manager: Optional[BudgetManager] = None,
+) -> OptimizedRecursiveEngine:
     """Build an :class:`OptimizedRecursiveEngine` from configuration."""
 
     selector: Optional[ModelSelector] = None
     default_model = config.model
-
     if config.model_policy:
         metadata = fetch_models()
         selector = ModelSelector(metadata, config.model_policy)
-        default_model = selector.model_for_role("assistant")
 
-    if config.provider.lower() == "openai":
-        llm = OpenAILLMProvider(
-            api_key=config.api_key or os.getenv("OPENAI_API_KEY"),
-            model=default_model,
-            max_retries=config.max_retries,
-        )
-    else:
-        llm = OpenRouterLLMProvider(
-            api_key=config.api_key or os.getenv("OPENROUTER_API_KEY"),
-            model=default_model,
-            max_retries=config.max_retries,
-        )
+    router = ModelRouter(
+        provider=config.provider,
+        api_key=config.api_key,
+        providers=config.providers,
+        provider_weights=config.provider_weights,
+        model=default_model,
+        selector=selector,
+        max_retries=config.max_retries,
+    )
 
     critic = None
     if selector:
-        critic_model = selector.model_for_role("critic")
-        if config.provider.lower() == "openai":
-            critic_provider = OpenAILLMProvider(
-                api_key=config.api_key or os.getenv("OPENAI_API_KEY"),
-                model=critic_model,
-                max_retries=config.max_retries,
-            )
-        else:
-            critic_provider = OpenRouterLLMProvider(
-                api_key=config.api_key or os.getenv("OPENROUTER_API_KEY"),
-                model=critic_model,
-                max_retries=config.max_retries,
-            )
+        try:
+            critic = CriticLLM(router.provider_for_role("critic"))
+        except Exception:  # pragma: no cover - optional critic
+            critic = None
+    router = router or ModelRouter.from_config(config, selector)
+    llm = router.provider_for_role("assistant")
+
+    critic = None
+    try:
+        critic_provider = router.provider_for_role("critic")
         critic = CriticLLM(critic_provider)
+    except Exception:
+        critic = None
 
     cache = InMemoryLRUCache(max_size=config.cache_size)
-
     evaluator = EnhancedQualityEvaluator(thresholds=config.quality_thresholds)
     convergence = ConvergenceStrategy(
         evaluator.score,
         evaluator.score,
+        max_iterations=5,
         advanced=config.advanced_convergence,
     )
 
@@ -548,6 +419,8 @@ def create_optimized_engine(config: CoRTConfig) -> OptimizedRecursiveEngine:
         llm=llm,
         cache=cache,
         evaluator=evaluator,
+        model_router=router,
+        budget_manager=budget_manager,
         critic=critic,
         convergence_strategy=convergence,
         enable_parallel=config.enable_parallel_thinking,

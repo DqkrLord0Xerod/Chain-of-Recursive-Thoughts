@@ -133,6 +133,7 @@ class MetricsRecorder(Protocol):
         token_usage: int,
         num_rounds: int,
         convergence_reason: str,
+        quality_scores: list[float] | None = None,
         **kwargs
     ) -> None:
         """Record metrics for a thinking run."""
@@ -145,8 +146,8 @@ class MetricsRecorder(Protocol):
 
 class ThinkingStrategy(Protocol):
     """Protocol for thinking strategies."""
-    
-    async def determine_rounds(self, prompt: str) -> int:
+
+    async def determine_rounds(self, prompt: str, *, request_id: str) -> int:
         """Determine number of thinking rounds needed."""
         ...
         
@@ -155,6 +156,8 @@ class ThinkingStrategy(Protocol):
         rounds_completed: int,
         quality_scores: List[float],
         responses: List[str],
+        *,
+        request_id: str,
     ) -> tuple[bool, str]:
         """Determine if thinking should continue."""
         ...
