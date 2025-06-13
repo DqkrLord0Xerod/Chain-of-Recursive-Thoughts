@@ -123,6 +123,7 @@ class RecursiveThinkingEngine:
         self.convergence_strategy = convergence_strategy or ConvergenceStrategy(
             evaluator.score,
             evaluator.score,
+            max_iterations=5,
             advanced=False,  # Will be passed explicitly in create_default_engine
         )
         self.model_selector = model_selector

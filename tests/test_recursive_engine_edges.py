@@ -54,7 +54,11 @@ async def test_invalid_json_alternative():
         evaluator=DummyEvaluator(),
         context_manager=ContextManager(100, type("T", (), {"encode": lambda self, t: t.split()})()),
         thinking_strategy=NoOpStrategy(),
-        convergence_strategy=ConvergenceStrategy(lambda a, b: 0.0, lambda r, p: 0.0),
+        convergence_strategy=ConvergenceStrategy(
+            lambda a, b: 0.0,
+            lambda r, p: 0.0,
+            max_iterations=2,
+        ),
         model_selector=None,
     )
 
@@ -73,9 +77,58 @@ async def test_selection_out_of_range():
         evaluator=DummyEvaluator(),
         context_manager=ContextManager(100, type("T", (), {"encode": lambda self, t: t.split()})()),
         thinking_strategy=NoOpStrategy(),
-        convergence_strategy=ConvergenceStrategy(lambda a, b: 0.0, lambda r, p: 0.0),
+        convergence_strategy=ConvergenceStrategy(
+            lambda a, b: 0.0,
+            lambda r, p: 0.0,
+            max_iterations=2,
+        ),
         model_selector=None,
     )
 
     result = await engine.think_and_respond("prompt", alternatives_per_round=1)
     assert result.response == "initial"
+
+
+@pytest.mark.asyncio
+async def test_loop_respects_max_iterations():
+    llm = DummyLLM(["initial", "ignored"])
+    engine = RecursiveThinkingEngine(
+        llm=llm,
+        cache=InMemoryLRUCache(max_size=2),
+        evaluator=DummyEvaluator(),
+        context_manager=ContextManager(100, type("T", (), {"encode": lambda self, t: t.split()})()),
+        thinking_strategy=NoOpStrategy(),
+        convergence_strategy=ConvergenceStrategy(
+            lambda a, b: 0.0,
+            lambda r, p: 0.0,
+            max_iterations=1,
+        ),
+        model_selector=None,
+    )
+
+    result = await engine.think_and_respond("prompt", alternatives_per_round=1)
+    assert result.thinking_rounds == 0
+    assert result.convergence_reason == "max iterations"
+
+
+@pytest.mark.asyncio
+async def test_loop_respects_time_limit(monkeypatch):
+    llm = DummyLLM(["initial", "ignored"])
+    engine = RecursiveThinkingEngine(
+        llm=llm,
+        cache=InMemoryLRUCache(max_size=2),
+        evaluator=DummyEvaluator(),
+        context_manager=ContextManager(100, type("T", (), {"encode": lambda self, t: t.split()})()),
+        thinking_strategy=NoOpStrategy(),
+        convergence_strategy=ConvergenceStrategy(
+            lambda a, b: 0.0,
+            lambda r, p: 0.0,
+            max_iterations=5,
+            time_limit=0.0,
+        ),
+        model_selector=None,
+    )
+
+    result = await engine.think_and_respond("prompt", alternatives_per_round=1)
+    assert result.thinking_rounds == 0
+    assert result.convergence_reason == "time limit"

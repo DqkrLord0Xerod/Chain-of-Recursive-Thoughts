@@ -15,6 +15,7 @@ def test_statistical_convergence_detection():
     strat = ConvergenceStrategy(
         lambda a, b: 0.0,
         lambda r, p: float(r),
+        max_iterations=10,
         window=3,
         improvement_threshold=0.0005,
         advanced=True,
