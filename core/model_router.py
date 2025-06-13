@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import random
 from typing import Dict, List, Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:  # pragma: no cover - import for typing
@@ -71,9 +72,14 @@ class ModelRouter:
 
     def provider_for_role(self, role: str) -> LLMProvider:
         model = self.model_for_role(role)
+        if len(self.providers) == 1:
+            return self._build_single_provider(self.providers[0], model)
+
+        if self.provider_weights and len(self.provider_weights) == len(self.providers):
+            choice = random.choices(self.providers, weights=self.provider_weights, k=1)[0]
+            return self._build_single_provider(choice, model)
+
         providers = [self._build_single_provider(p, model) for p in self.providers]
-        if len(providers) == 1:
-            return providers[0]
         return MultiProviderLLM(providers)
 
     async def provider_health(self) -> Dict[str, bool]:
@@ -88,3 +94,6 @@ class ModelRouter:
             except Exception:
                 results[name] = False
         return results
+
+
+__all__ = ["ModelRouter"]

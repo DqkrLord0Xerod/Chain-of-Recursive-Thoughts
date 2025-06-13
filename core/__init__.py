@@ -6,6 +6,7 @@ from .chat_v2 import (
     RecursiveThinkingEngine,
     create_default_engine,
 )
+from .model_router import ModelRouter
 from .strategies import AdaptiveThinkingStrategy, load_strategy
 from .recursive_engine_v2 import create_optimized_engine
 from .recursion import ConvergenceStrategy, StatisticalConvergenceStrategy
@@ -23,4 +24,5 @@ __all__ = [
     "StatisticalConvergenceStrategy",
     "AdaptiveThinkingAgent",
     "ImprovementPlanner",
+    "ModelRouter",
 ]
