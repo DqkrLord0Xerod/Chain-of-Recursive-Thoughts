@@ -10,7 +10,7 @@ import os  # noqa: F401
 
 import structlog
 
-from core.strategies import ThinkingStrategy, strategy_from_config
+from core.strategies import ThinkingStrategy, strategy_from_config, load_strategy
 from core.interfaces import (
     CacheProvider,
     LLMProvider,
@@ -193,7 +193,6 @@ def create_default_engine(
 ) -> RecursiveThinkingEngine:
     """Build a :class:`RecursiveThinkingEngine` from configuration."""
 
-
     if config.provider.lower() == "openai":
         llm = OpenAILLMProvider(
             api_key=config.api_key or os.getenv("OPENAI_API_KEY"),
@@ -214,10 +213,6 @@ def create_default_engine(
     ctx_mgr = ContextManager(config.max_context_tokens, tokenizer)
 
     strategy = strategy_from_config(config, llm, evaluator)
-    strategy = StrategyFactory(llm, evaluator).create(config.thinking_strategy)
-
-
-
     strategy = load_strategy(config.thinking_strategy, llm, evaluator)
     convergence = ConvergenceStrategy(
         evaluator.score,
@@ -234,11 +229,8 @@ def create_default_engine(
         llm=llm,
         cache=cache,
         evaluator=evaluator,
-        context_manager=context_manager,
-        thinking_strategy=strategy,
-        convergence_strategy=convergence,
-        tools=tools,
         context_manager=ctx_mgr,
         thinking_strategy=strategy,
         convergence_strategy=convergence,
+        tools=tools,
     )
