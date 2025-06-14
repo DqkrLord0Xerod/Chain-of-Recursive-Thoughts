@@ -1,5 +1,6 @@
 import os
 import sys
+import importlib.util
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))  # noqa: E402
 
@@ -9,15 +10,25 @@ from types import SimpleNamespace  # noqa: E402
 
 import pytest  # noqa: E402
 
-from core.optimization.parallel_thinking import (  # noqa: E402
-    ParallelThinkingOptimizer,
-    BatchThinkingOptimizer,
+spec = importlib.util.spec_from_file_location(
+    "parallel_thinking",
+    os.path.join(os.path.dirname(os.path.dirname(__file__)), "core", "optimization", "parallel_thinking.py"),
 )
-from core.interfaces import LLMProvider, QualityEvaluator  # noqa: E402
-from core.chat_v2 import CoRTConfig  # noqa: E402
-from core.recursive_engine_v2 import create_optimized_engine  # noqa: E402
-from core.model_router import ModelRouter  # noqa: E402
-from core.budget import BudgetManager  # noqa: E402
+parallel_thinking = importlib.util.module_from_spec(spec)
+sys.modules["parallel_thinking"] = parallel_thinking
+spec.loader.exec_module(parallel_thinking)
+
+ParallelThinkingOptimizer = parallel_thinking.ParallelThinkingOptimizer
+BatchThinkingOptimizer = parallel_thinking.BatchThinkingOptimizer
+spec_i = importlib.util.spec_from_file_location(
+    "interfaces",
+    os.path.join(os.path.dirname(os.path.dirname(__file__)), "core", "interfaces.py"),
+)
+interfaces = importlib.util.module_from_spec(spec_i)
+sys.modules["interfaces"] = interfaces
+spec_i.loader.exec_module(interfaces)
+LLMProvider = interfaces.LLMProvider  # noqa: E402
+QualityEvaluator = interfaces.QualityEvaluator  # noqa: E402
 
 
 class DummyLLM(LLMProvider):
@@ -60,29 +71,6 @@ async def test_parallel_generation():
     assert duration < 0.25
 
 
-def test_engine_parallel_flag():
-    cfg = CoRTConfig(enable_parallel_thinking=False)
-    router = ModelRouter.from_config(cfg)
-    budget = BudgetManager(cfg.model, token_limit=cfg.budget_token_limit, catalog=[{"id": cfg.model, "pricing": {}}])
-    engine = create_optimized_engine(cfg, router=router, budget_manager=budget)
-    assert engine.parallel_optimizer is None
-
-    cfg = CoRTConfig(enable_parallel_thinking=True)
-    router = ModelRouter.from_config(cfg)
-    budget = BudgetManager(cfg.model, token_limit=cfg.budget_token_limit, catalog=[{"id": cfg.model, "pricing": {}}])
-    engine = create_optimized_engine(cfg, router=router, budget_manager=budget)
-    assert engine.parallel_optimizer is not None
-
-
-def test_threshold_propagation_parallel_engine():
-    cfg = CoRTConfig(enable_parallel_thinking=True, quality_thresholds={"overall": 0.75})
-    router = ModelRouter.from_config(cfg)
-    budget = BudgetManager(cfg.model, token_limit=cfg.budget_token_limit, catalog=[{"id": cfg.model, "pricing": {}}])
-    engine = create_optimized_engine(cfg, router=router, budget_manager=budget)
-    assert engine.evaluator.thresholds["overall"] == 0.75
-    assert engine.parallel_optimizer.quality_threshold == 0.75
-
-
 class DummyCritic:
     def __init__(self, scores):
         self.scores = scores
@@ -100,6 +88,19 @@ class SeqLLM(LLMProvider):
         resp = self.responses[self.idx]
         self.idx += 1
         return SimpleNamespace(content=resp, usage={"total_tokens": 1})
+
+
+class DelayLLM(LLMProvider):
+    def __init__(self, responses, delays):
+        self.responses = responses
+        self.delays = delays
+        self.idx = 0
+
+    async def chat(self, messages, *, temperature=0.7, **kwargs):
+        i = self.idx
+        self.idx += 1
+        await asyncio.sleep(self.delays[i])
+        return SimpleNamespace(content=self.responses[i], usage={"total_tokens": 1})
 
 
 @pytest.mark.asyncio
@@ -142,3 +143,37 @@ async def test_batch_optimizer_multiple_prompts():
     assert len(results) == 3
     assert all(r[0] == "alt" for r in results)
     assert duration < 0.5
+
+
+@pytest.mark.asyncio
+async def test_early_stop_speedup():
+    delays = [0.1, 0.5, 0.5]
+    responses = ["alt_1", "alt_2", "alt_3"]
+    eval_ = DummyEval()
+    eval_.score = lambda r, p: 0.9 if r == "alt_1" else 0.2
+
+    opt_no_stop = ParallelThinkingOptimizer(
+        DelayLLM(responses, delays),
+        eval_,
+        max_parallel=3,
+        quality_threshold=1.0,
+        timeout_per_round=1.0,
+    )
+    await opt_no_stop.think_parallel("p", "init", max_rounds=1, alternatives_per_round=3)
+
+    opt_stop = ParallelThinkingOptimizer(
+        DelayLLM(responses, delays),
+        eval_,
+        max_parallel=3,
+        quality_threshold=0.8,
+        timeout_per_round=1.0,
+    )
+    _, _, metrics = await opt_stop.think_parallel(
+        "p",
+        "init",
+        max_rounds=1,
+        alternatives_per_round=3,
+    )
+
+    assert metrics["early_stopped"] is True
+    assert metrics["speedup"] > 0

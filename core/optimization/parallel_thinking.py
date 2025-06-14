@@ -163,7 +163,13 @@ class ParallelThinkingOptimizer:
             "total_time": time.time() - start_time,
             "early_stopped": best_score >= self.quality_threshold,
         }
-        
+
+        sequential_time = sum(c.generation_time for c in candidates)
+        if metrics["total_time"] > 0:
+            metrics["speedup"] = sequential_time / metrics["total_time"]
+        else:
+            metrics["speedup"] = 1.0
+
         return best_response, candidates, metrics
         
     async def _generate_parallel_alternatives(
@@ -189,27 +195,29 @@ class ParallelThinkingOptimizer:
             )
             tasks.append(task)
             
-        # Wait with timeout
-        done, pending = await asyncio.wait(
-            tasks,
-            timeout=self.timeout_per_round,
-            return_when=asyncio.ALL_COMPLETED,
-        )
-        
-        # Cancel timed out tasks
-        for task in pending:
-            task.cancel()
-            
-        # Collect results
-        candidates = []
-        for task in done:
+        deadline = time.time() + self.timeout_per_round
+        candidates: List[ThinkingCandidate] = []
+
+        for fut in asyncio.as_completed(tasks, timeout=self.timeout_per_round):
             try:
-                candidate = task.result()
+                remaining = max(0, deadline - time.time())
+                candidate = await asyncio.wait_for(fut, timeout=remaining)
                 if candidate:
                     candidates.append(candidate)
+                    if candidate.quality_score >= self.quality_threshold:
+                        for task in tasks:
+                            if not task.done():
+                                task.cancel()
+                        break
+            except asyncio.TimeoutError:
+                break
             except Exception as e:
                 logger.warning("parallel_generation_failed", error=str(e))
-                
+
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+
         return candidates
         
     async def _generate_single_alternative(
